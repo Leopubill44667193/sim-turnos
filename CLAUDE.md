@@ -19,7 +19,7 @@ Sistema de reservas online configurable por negocio. Un solo repo, una sola base
 | `sim-turnos` | OC.Hobbies.Racing | Av. 3 de Febrero 283, Rojas | 4 simuladores, 60 min | 15:00-02:00 todos los días |
 | `prgrssv` | Prgrssv | Zeballos 2239 6A, Rosario | 1 peluquero, 30 min | 09:00-19:30 Lun-Vie |
 | `lacancha` | La Cancha Padel | Av. 20 de Diciembre 130, Rojas | 4 canchas, 90 min | 09:00-00:00 todos los días |
-| `demo-padel` | Club Demo Pádel | Av. Siempreviva 742, Rosario | 4 canchas, 90 min | 09:00-00:00 todos los días | ⚠️ pendiente: crear proyecto en Vercel y configurar variables de entorno |
+| `demo-padel` | Club Demo Pádel | Av. Siempreviva 742, Rosario | 4 canchas, 90 min | 09:00-00:00 todos los días |
 
 ## Dominios
 
@@ -29,6 +29,7 @@ Sistema de reservas online configurable por negocio. Un solo repo, una sola base
 | `lacancha.reservaturnos.com.ar` | `lacancha` |
 | `ochobbies.reservaturnos.com.ar` | `sim-turnos` |
 | `prgrssv.reservaturnos.com.ar` | `prgrssv` |
+| `demo-padel-ten.vercel.app` | `demo-padel` |
 
 ## Landing comercial
 

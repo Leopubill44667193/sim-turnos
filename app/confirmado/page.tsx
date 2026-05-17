@@ -90,7 +90,7 @@ function Confirmado() {
         href={`https://wa.me/?text=${waTexto}`}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center justify-center gap-2 w-full border border-green-600/40 hover:border-green-500 hover:bg-green-500/5 text-green-500 rounded-xl p-4 text-sm font-bold uppercase tracking-widest transition mb-4"
+        className="flex items-center justify-center gap-2 w-full border border-[var(--accent)]/40 hover:border-[var(--accent)] hover:bg-[var(--accent)]/5 text-[var(--accent)] rounded-xl p-4 text-sm font-bold uppercase tracking-widest transition mb-4"
       >
         <span>Compartir por WhatsApp</span>
       </a>

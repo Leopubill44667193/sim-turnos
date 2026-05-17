@@ -3,7 +3,7 @@ import type { NegocioConfig } from '@/lib/config'
 const config: NegocioConfig = {
   id: 'demo-padel',
   nombre: 'Club Demo Pádel',
-  nombreDisplay: { parte1: 'Club Demo', parte2: ' Pádel' },
+  nombreDisplay: { parte1: 'Club Demo Pádel' },
   direccion: 'Av. Siempreviva 742, Rosario',
   horario: {
     inicioMin: 9 * 60,
@@ -22,7 +22,7 @@ const config: NegocioConfig = {
   adminPassword: 'demo',
   emoji: '🎾',
   seleccionSimple: true,
-  tema: { accent: '#16a34a', accentHover: '#15803d', bg: '#0a0a0a' },
+  tema: { accent: '#2563eb', accentHover: '#1d4ed8', bg: '#0a0a0a' },
   cancelacionMinHs: 2,
 }
 
