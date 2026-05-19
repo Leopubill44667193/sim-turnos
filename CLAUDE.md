@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Reglas para Claude Code
+
+- Siempre que se cree una tabla nueva en Supabase, agregarla al esquema en este archivo.
+- Siempre que se cree una route nueva, agregarla a la tabla de Rutas.
+- Al final de cada sesión, actualizar la sección de Features pendientes marcando lo completado.
+- Nunca modificar `.env.local` directamente.
+
 ---
 
 # sim-turnos — Sistema multi-negocio de reservas
