@@ -29,6 +29,7 @@ export default function CancelarTokenPage() {
         .from('turnos')
         .select('id, fecha, hora_inicio, simulador_id, clientes(nombre, telefono)')
         .eq('cancel_token', token)
+        .eq('negocio_id', negocio.id)
         .single()
 
       if (!data) {
@@ -74,7 +75,7 @@ export default function CancelarTokenPage() {
   const dentroDeVentana = useMemo(() => {
     if (!turno || !negocio.cancelacionMinHs) return false
     const slotMs = new Date(`${turno.fecha}T${turno.hora_inicio}`).getTime()
-    return slotMs <= ahora.getTime() + negocio.cancelacionMinHs * 60 * 60 * 1000
+    return slotMs > ahora.getTime() && slotMs <= ahora.getTime() + negocio.cancelacionMinHs * 60 * 60 * 1000
   }, [turno, ahora])
 
   function formatearFecha(fecha: string) {
