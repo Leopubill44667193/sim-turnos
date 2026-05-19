@@ -428,7 +428,7 @@ En el último paso de `/reservar` (después de ingresar nombre y teléfono) se r
 - Provider: Google OAuth activado
 - Callback URL: `https://smxxwdgmxvrvinfzxwan.supabase.co/auth/v1/callback`
 - Site URL: `https://reservaturnos.com.ar`
-- Redirect URLs permitidas: `https://lacancha.reservaturnos.com.ar/reservar`, `https://ochobbies.reservaturnos.com.ar/reservar`, `https://prgrssv.reservaturnos.com.ar/reservar`, `http://localhost:3000/reservar`
+- Redirect URLs permitidas: `https://lacancha.reservaturnos.com.ar/reservar`, `https://ochobbies.reservaturnos.com.ar/reservar`, `https://prgrssv.reservaturnos.com.ar/reservar`, `https://demo-padel-ten.vercel.app/reservar`, `http://localhost:3000/reservar`
 
 **Google Cloud Console:**
 - Proyecto: `reservaturnos` (ID: `reservaturnos-495400`)
