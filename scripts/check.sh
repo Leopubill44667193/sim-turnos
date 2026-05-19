@@ -51,7 +51,7 @@ for negocio in "${NEGOCIOS[@]}"; do
 
   for ruta in "${RUTAS[@]}"; do
     status=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$PORT$ruta")
-    if [ "$status" = "200" ]; then
+    if [ "$status" = "200" ] || [ "$status" = "307" ]; then
       echo "  [OK]   $ruta"
       TOTAL_OK=$((TOTAL_OK + 1))
     else

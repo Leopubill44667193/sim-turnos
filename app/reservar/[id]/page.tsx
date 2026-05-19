@@ -43,14 +43,16 @@ export default function ReservarIdPage({ params }: { params: Promise<{ id: strin
         return
       }
       setDiaNoHabil(false)
-      const [{ data: turnosData }, { data: bloqueo }, { data: horBloq }] = await Promise.all([
+      const [{ data: turnosData }, { data: bloqueo }, { data: horBloq }, { data: slotsBloq }] = await Promise.all([
         supabase.from('turnos').select('hora_inicio').eq('simulador_id', Number(simuladorId)).eq('fecha', fecha).eq('negocio_id', negocio.id),
         supabase.from('dias_bloqueados').select('fecha').eq('fecha', fecha).eq('negocio_id', negocio.id).single(),
         supabase.from('horarios_bloqueados').select('hora').eq('fecha', fecha).eq('negocio_id', negocio.id),
+        supabase.from('slots_bloqueados').select('hora').eq('negocio_id', negocio.id).eq('recurso_id', Number(simuladorId)).eq('fecha', fecha),
       ])
       setFechaBloqueada(!!bloqueo)
       setHorariosBloqueados((horBloq ?? []).map((h) => h.hora.slice(0, 5)))
-      if (turnosData) setHorasOcupadas(turnosData.map((t) => t.hora_inicio.slice(0, 5)))
+      const slotsHoras = (slotsBloq ?? []).map((s) => s.hora.slice(0, 5))
+      setHorasOcupadas([...(turnosData ?? []).map((t) => t.hora_inicio.slice(0, 5)), ...slotsHoras])
     }
     fetchDatos()
     setHorasSeleccionadas([])

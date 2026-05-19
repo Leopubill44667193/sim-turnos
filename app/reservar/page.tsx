@@ -43,10 +43,11 @@ export default function ReservarPage() {
         return
       }
       setDiaNoHabil(false)
-      const [{ data: turnosData, error: errorFetch }, { data: bloqueo }, { data: horBloq }] = await Promise.all([
+      const [{ data: turnosData, error: errorFetch }, { data: bloqueo }, { data: horBloq }, { data: slotsBloq }] = await Promise.all([
         supabase.from('turnos').select('hora_inicio, simulador_id').eq('fecha', fecha).eq('negocio_id', negocio.id),
         supabase.from('dias_bloqueados').select('fecha').eq('fecha', fecha).eq('negocio_id', negocio.id).single(),
         supabase.from('horarios_bloqueados').select('hora').eq('fecha', fecha).eq('negocio_id', negocio.id),
+        supabase.from('slots_bloqueados').select('recurso_id, hora').eq('fecha', fecha).eq('negocio_id', negocio.id),
       ])
       if (errorFetch) {
         alert('Error al cargar disponibilidad. Recargá la página e intentá de nuevo.\n' + errorFetch.message)
@@ -59,6 +60,11 @@ export default function ReservarPage() {
         const h = t.hora_inicio.slice(0, 5)
         if (!mapa[h]) mapa[h] = []
         mapa[h].push(t.simulador_id)
+      }
+      for (const s of slotsBloq ?? []) {
+        const h = s.hora.slice(0, 5)
+        if (!mapa[h]) mapa[h] = []
+        if (!mapa[h].includes(s.recurso_id)) mapa[h].push(s.recurso_id)
       }
       setOcupadosPorHora(mapa)
       if (draftRef.current) {

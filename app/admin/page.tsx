@@ -62,6 +62,8 @@ export default function Admin() {
   const [mostrarPasados, setMostrarPasados] = useState(false)
   const [resumenTurnos, setResumenTurnos] = useState<Turno[]>([])
   const [loadingResumen, setLoadingResumen] = useState(false)
+  const [slotsBloqueados, setSlotsBloqueados] = useState<Set<string>>(new Set())
+  const [procesandoHora, setProcesandoHora] = useState<Set<string>>(new Set())
 
   const fetchResumen = async () => {
     setLoadingResumen(true)
@@ -80,8 +82,8 @@ export default function Admin() {
       fetchResumen()
     } else {
       fetchTurnos()
-      if (modo === 'dia') { fetchBloqueo(); fetchHorariosBloqueados() }
-      else { setDiaBloqueado(null); setHorariosBloqueados(new Set()) }
+      if (modo === 'dia') { fetchBloqueo(); fetchHorariosBloqueados(); fetchSlotsBloqueados() }
+      else { setDiaBloqueado(null); setHorariosBloqueados(new Set()); setSlotsBloqueados(new Set()) }
     }
   }, [modo, fecha])
 
@@ -104,6 +106,11 @@ export default function Admin() {
     setHorariosBloqueados(new Set((data ?? []).map((d) => d.hora.slice(0, 5))))
   }
 
+  const fetchSlotsBloqueados = async () => {
+    const { data } = await supabase.from('slots_bloqueados').select('recurso_id, hora').eq('fecha', fecha).eq('negocio_id', negocio.id)
+    setSlotsBloqueados(new Set((data ?? []).map((d) => `${d.recurso_id}_${d.hora.slice(0, 5)}`)))
+  }
+
   const toggleHorario = async (hora: string) => {
     if (horariosBloqueados.has(hora)) {
       await supabase.from('horarios_bloqueados').delete().eq('fecha', fecha).eq('hora', hora).eq('negocio_id', negocio.id)
@@ -112,6 +119,43 @@ export default function Admin() {
       await supabase.from('horarios_bloqueados').insert({ fecha, hora, negocio_id: negocio.id })
       setHorariosBloqueados((prev) => new Set([...prev, hora]))
     }
+  }
+
+  const toggleHoraCompleta = async (hora: string) => {
+    if (procesandoHora.has(hora)) return
+    setProcesandoHora((prev) => new Set([...prev, hora]))
+    const nuevosSlots = new Set(slotsBloqueados)
+    const ops: Promise<void>[] = []
+    for (const r of RECURSOS) {
+      if (grillaMap[hora]?.[r.id] || horariosBloqueados.has(hora)) continue
+      const key = `${r.id}_${hora}`
+      const bloqueado = nuevosSlots.has(key)
+      ops.push(
+        fetch('/api/admin/bloquear-slot', {
+          method: bloqueado ? 'DELETE' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ negocio_id: negocio.id, recurso_id: r.id, fecha, hora }),
+        }).then(() => { bloqueado ? nuevosSlots.delete(key) : nuevosSlots.add(key) })
+      )
+    }
+    await Promise.all(ops)
+    setSlotsBloqueados(nuevosSlots)
+    setProcesandoHora((prev) => { const s = new Set(prev); s.delete(hora); return s })
+  }
+
+  const toggleSlot = async (hora: string, recursoId: number) => {
+    const key = `${recursoId}_${hora}`
+    const bloqueado = slotsBloqueados.has(key)
+    await fetch('/api/admin/bloquear-slot', {
+      method: bloqueado ? 'DELETE' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ negocio_id: negocio.id, recurso_id: recursoId, fecha, hora }),
+    })
+    setSlotsBloqueados((prev) => {
+      const s = new Set(prev)
+      bloqueado ? s.delete(key) : s.add(key)
+      return s
+    })
   }
 
   const fetchBloqueo = async () => {
@@ -423,7 +467,13 @@ export default function Admin() {
               <tbody>
                 {horariosFiltrados.map((hora) => (
                   <tr key={hora} className="border-t border-white/5">
-                    <td className="p-3 text-gray-600 text-xs font-mono">{hora}</td>
+                    <td className="p-3 text-xs font-mono">
+                      <button
+                        onClick={() => !diaBloqueado && toggleHoraCompleta(hora)}
+                        disabled={procesandoHora.has(hora)}
+                        className={'transition ' + (diaBloqueado ? 'text-gray-600 cursor-default' : procesandoHora.has(hora) ? 'text-gray-600 opacity-50 cursor-default' : 'text-gray-600 hover:text-white cursor-pointer')}
+                      >{hora}</button>
+                    </td>
                     {RECURSOS.map((r) => {
                       const turno = grillaMap[hora]?.[r.id]
                       return (
@@ -443,8 +493,12 @@ export default function Admin() {
                             <button onClick={() => toggleHorario(hora)} className="w-full rounded-lg p-2 text-center border border-orange-500/20 text-orange-800 text-xs hover:border-orange-500/40 transition">
                               bloq. ✕
                             </button>
+                          ) : slotsBloqueados.has(`${r.id}_${hora}`) ? (
+                            <button onClick={() => toggleSlot(hora, r.id)} className="w-full rounded-lg p-2 text-center border border-amber-500/30 bg-amber-500/10 text-amber-600 text-xs hover:border-amber-500/50 transition">
+                              bloqueado ✕
+                            </button>
                           ) : (
-                            <button onClick={() => toggleHorario(hora)} className="w-full rounded-lg p-2 text-center border border-white/5 text-gray-800 text-xs hover:border-white/20 hover:text-gray-600 transition">
+                            <button onClick={() => toggleSlot(hora, r.id)} className="w-full rounded-lg p-2 text-center border border-white/5 text-gray-800 text-xs hover:border-white/20 hover:text-gray-600 transition">
                               libre
                             </button>
                           )}
