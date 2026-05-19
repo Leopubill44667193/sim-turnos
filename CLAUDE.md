@@ -240,6 +240,37 @@ CREATE INDEX idx_reservas_por_ip_negocio_ip_created
 
 RLS deshabilitado (misma anon key para todos).
 
+### `slots_bloqueados`
+| campo | tipo | notas |
+|-------|------|-------|
+| id | uuid PK | default gen_random_uuid() |
+| negocio_id | text NOT NULL | |
+| recurso_id | int NOT NULL | |
+| fecha | date NOT NULL | |
+| hora | time NOT NULL | |
+| motivo | text | nullable |
+| created_at | timestamptz NOT NULL | default now() |
+
+**Índice único:** `(negocio_id, recurso_id, fecha, hora)`
+
+Usada por `/api/admin/bloquear-slot` para bloquear slots individuales desde el admin. El flujo de reserva consulta esta tabla para excluir esos slots de la disponibilidad. Migración ejecutada el 2026-05-19.
+
+```sql
+CREATE TABLE slots_bloqueados (
+  id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  negocio_id text        NOT NULL,
+  recurso_id int         NOT NULL,
+  fecha      date        NOT NULL,
+  hora       time        NOT NULL,
+  motivo     text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX idx_slots_bloqueados_unique
+  ON slots_bloqueados (negocio_id, recurso_id, fecha, hora);
+```
+
+RLS deshabilitado.
+
 ---
 
 ## Rutas
@@ -253,9 +284,10 @@ RLS deshabilitado (misma anon key para todos).
 | `/cancelar/[token]` | Cancelación self-service, sin login |
 | `/cancelar` | Redirige a /mis-turnos |
 | `/mis-turnos` | Buscar turnos propios por teléfono |
-| `/admin` | Panel con cuatro pestañas: Resumen / Próximos / Todos / Por día. Resumen muestra métricas de hoy, semana y mes. Por día incluye grilla + tabla + bloqueos |
+| `/admin` | Panel con cuatro pestañas: Resumen / Próximos / Todos / Por día. Resumen muestra métricas de hoy, semana y mes. Por día incluye grilla + tabla + bloqueos. En la grilla: click en celda libre → bloquea ese slot individual (ámbar, `slots_bloqueados`); click en label de hora → bloquea/desbloquea todos los slots libres de esa fila a la vez |
 | `/api/notificar` | POST server-side → Twilio Content Templates: admin (TO_1/TO_2) + cliente |
 | `/api/validar-reserva` | POST server-side → valida nombre/teléfono y límite por IP antes del insert |
+| `/api/admin/bloquear-slot` | POST/DELETE server-side → bloquea o desbloquea un slot individual (recurso + fecha + hora) en `slots_bloqueados`. Requiere cookie `admin_session`. |
 
 ---
 
@@ -426,6 +458,8 @@ Implementado el 2026-05-05. Reemplaza la validación client-side (contraseña en
 **Variable de entorno:** `ADMIN_PASSWORD` — sin `NEXT_PUBLIC_`, distinta por negocio en Vercel. Agregar también a `.env.local` para desarrollo local.
 
 **Nota:** la página de login está en `/admin-login` (no `/admin/login`) porque `app/admin/` tiene permisos de root en el sistema de archivos local. Funcionalmente idéntico.
+
+**Fix cookie path (2026-05-19):** la cookie `admin_session` se emite con `path: '/'` (no `path: '/admin'`) para que el browser la envíe también en requests a `/api/admin/*`. Si hay sesiones activas previas al fix, hacer logout y login de nuevo.
 
 ---
 
