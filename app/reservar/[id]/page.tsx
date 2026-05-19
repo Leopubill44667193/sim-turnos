@@ -12,6 +12,13 @@ const UMBRAL = calcularUmbral(negocio.horario.finMin)
 
 export default function ReservarIdPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
+
+  useEffect(() => {
+    if (negocio.id === 'landing') router.push('/')
+  }, [])
+
+  if (negocio.id === 'landing') return null
+
   const [simuladorId, setSimuladorId] = useState('')
   const [fecha, setFecha] = useState('')
   const [horasSeleccionadas, setHorasSeleccionadas] = useState<string[]>([])
