@@ -508,6 +508,8 @@ Implementado el 2026-05-03. Activo en los tres negocios.
 
 - ~~**Bug admin**~~ — al borrar un turno desde vista tabla cambia a grilla. Resuelto al refactorizar modos.
 - ~~**Constraint UNIQUE en turnos sin negocio_id**~~ — resuelto el 2026-04-30. Ver nota en sección `turnos` del esquema de BD.
+- ~~**Lógica dentroDeVentana invertida en /cancelar/[token]**~~ — resuelto el 2026-05-19. La condición mostraba "contactar al local" cuando el turno ya había pasado en lugar de cuando se acercaba.
+- ~~**Query a turnos sin negocio_id en /cancelar/[token]**~~ — resuelto el 2026-05-19. Faltaba `.eq('negocio_id', negocio.id)` en la query de carga del turno.
 
 ---
 
