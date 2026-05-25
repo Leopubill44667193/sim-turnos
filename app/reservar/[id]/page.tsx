@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { negocio } from '@/config'
-import { generarHorarios, calcularUmbral, horaValida, esDiaHabil } from '@/lib/config'
+import { generarHorarios, calcularUmbral, horaValida, esDiaHabil, toMin } from '@/lib/config'
 import CalendarioInline from '@/components/CalendarioInline'
 
 const HORARIOS = generarHorarios(negocio.horario.inicioMin, negocio.horario.finMin, negocio.horario.intervaloMinutos)
@@ -25,7 +25,8 @@ export default function ReservarIdPage({ params }: { params: Promise<{ id: strin
   const [nombre, setNombre] = useState('')
   const [telefono, setTelefono] = useState('')
   const [cargando, setCargando] = useState(false)
-  const [horasOcupadas, setHorasOcupadas] = useState<string[]>([])
+  const [turnosHoras, setTurnosHoras] = useState<string[]>([])
+  const [slotsBloqHoras, setSlotsBloqHoras] = useState<string[]>([])
   const [fechaBloqueada, setFechaBloqueada] = useState(false)
   const [diaNoHabil, setDiaNoHabil] = useState(false)
   const [horariosBloqueados, setHorariosBloqueados] = useState<string[]>([])
@@ -51,8 +52,8 @@ export default function ReservarIdPage({ params }: { params: Promise<{ id: strin
       ])
       setFechaBloqueada(!!bloqueo)
       setHorariosBloqueados((horBloq ?? []).map((h) => h.hora.slice(0, 5)))
-      const slotsHoras = (slotsBloq ?? []).map((s) => s.hora.slice(0, 5))
-      setHorasOcupadas([...(turnosData ?? []).map((t) => t.hora_inicio.slice(0, 5)), ...slotsHoras])
+      setTurnosHoras((turnosData ?? []).map((t) => t.hora_inicio.slice(0, 5)))
+      setSlotsBloqHoras((slotsBloq ?? []).map((s) => s.hora.slice(0, 5)))
     }
     fetchDatos()
     setHorasSeleccionadas([])
@@ -132,6 +133,16 @@ export default function ReservarIdPage({ params }: { params: Promise<{ id: strin
     })
   }
 
+  function horaConflicto(hora: string): boolean {
+    const s = toMin(hora)
+    const d = negocio.duracionMinutos
+    return (
+      turnosHoras.some(t => { const tm = toMin(t); return s >= tm && s < tm + d }) ||
+      slotsBloqHoras.some(b => { const bm = toMin(b); return s >= bm && s < bm + d }) ||
+      horariosBloqueados.some(b => { const bm = toMin(b); return s >= bm && s < bm + d })
+    )
+  }
+
   return (
     <main className="min-h-screen bg-[var(--bg)] text-white">
       <div className="border-b border-white/10 px-8 py-5 flex items-center justify-between">
@@ -185,7 +196,7 @@ export default function ReservarIdPage({ params }: { params: Promise<{ id: strin
             </div>
             <div className="grid grid-cols-4 gap-2">
               {HORARIOS.map((hora) => {
-                const ocupado = horasOcupadas.includes(hora) || !horaValida(hora, fecha, UMBRAL, negocio.anticipacionMinHs) || horariosBloqueados.includes(hora)
+                const ocupado = horaConflicto(hora) || !horaValida(hora, fecha, UMBRAL, negocio.anticipacionMinHs)
                 const seleccionado = horasSeleccionadas.includes(hora)
                 const lleno = !seleccionado && horasSeleccionadas.length >= 4
                 return (

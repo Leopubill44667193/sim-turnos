@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { negocio } from '@/config'
-import { generarHorarios, calcularUmbral, horaValida, esDiaHabil } from '@/lib/config'
+import { generarHorarios, calcularUmbral, horaValida, esDiaHabil, toMin } from '@/lib/config'
 import CalendarioInline from '@/components/CalendarioInline'
 
 const HORARIOS = generarHorarios(negocio.horario.inicioMin, negocio.horario.finMin, negocio.horario.intervaloMinutos)
@@ -27,7 +27,8 @@ export default function ReservarPage() {
   const [nombre, setNombre] = useState('')
   const [telefono, setTelefono] = useState('')
   const [cargando, setCargando] = useState(false)
-  const [ocupadosPorHora, setOcupadosPorHora] = useState<Record<string, number[]>>({})
+  const [turnosPorHora, setTurnosPorHora] = useState<Record<string, number[]>>({})
+  const [slotsBloqList, setSlotsBloqList] = useState<Array<{ recurso_id: number; hora: string }>>([])
   const [fechaBloqueada, setFechaBloqueada] = useState(false)
   const [diaNoHabil, setDiaNoHabil] = useState(false)
   const [horariosBloqueados, setHorariosBloqueados] = useState<string[]>([])
@@ -61,12 +62,8 @@ export default function ReservarPage() {
         if (!mapa[h]) mapa[h] = []
         mapa[h].push(t.simulador_id)
       }
-      for (const s of slotsBloq ?? []) {
-        const h = s.hora.slice(0, 5)
-        if (!mapa[h]) mapa[h] = []
-        if (!mapa[h].includes(s.recurso_id)) mapa[h].push(s.recurso_id)
-      }
-      setOcupadosPorHora(mapa)
+      setTurnosPorHora(mapa)
+      setSlotsBloqList((slotsBloq ?? []).map((s) => ({ recurso_id: s.recurso_id, hora: s.hora.slice(0, 5) })))
       if (draftRef.current) {
         const { hora, recursos } = draftRef.current
         draftRef.current = null
@@ -102,14 +99,34 @@ export default function ReservarPage() {
     return () => subscription.unsubscribe()
   }, [])
 
+  function recursosOcupados(hora: string): number[] {
+    const s = toMin(hora)
+    const d = negocio.duracionMinutos
+    const result = new Set<number>()
+    for (const [h, ids] of Object.entries(turnosPorHora)) {
+      const t = toMin(h)
+      if (s >= t && s < t + d) ids.forEach(id => result.add(id))
+    }
+    for (const b of slotsBloqList) {
+      const bm = toMin(b.hora)
+      if (s >= bm && s < bm + d) result.add(b.recurso_id)
+    }
+    return [...result]
+  }
+
+  function horaBloqueada(hora: string): boolean {
+    const s = toMin(hora)
+    const d = negocio.duracionMinutos
+    return horariosBloqueados.some(b => { const bm = toMin(b); return s >= bm && s < bm + d })
+  }
+
   function seleccionarHora(hora: string) {
     setHoraSeleccionada(hora)
     setRecursosSeleccionados([])
   }
 
   function toggleRecurso(id: number) {
-    const ocupados = ocupadosPorHora[horaSeleccionada] ?? []
-    if (ocupados.includes(id)) return
+    if (recursosOcupados(horaSeleccionada).includes(id)) return
     setRecursosSeleccionados((prev) =>
       negocio.seleccionSimple
         ? prev.includes(id) ? [] : [id]
@@ -223,8 +240,8 @@ export default function ReservarPage() {
     })
   }
 
-  const ocupadosEnHora = horaSeleccionada ? (ocupadosPorHora[horaSeleccionada] ?? []) : []
-  const disponiblesEnHora = (hora: string) => RECURSOS.length - (ocupadosPorHora[hora] ?? []).length
+  const ocupadosEnHora = horaSeleccionada ? recursosOcupados(horaSeleccionada) : []
+  const disponiblesEnHora = (hora: string) => RECURSOS.length - recursosOcupados(hora).length
 
   return (
     <main className="min-h-screen bg-[var(--bg)] text-white">
@@ -277,7 +294,7 @@ export default function ReservarPage() {
               {HORARIOS.map((hora) => {
                 const disp = disponiblesEnHora(hora)
                 const pasado = !horaValida(hora, fecha, UMBRAL, negocio.anticipacionMinHs)
-                const bloqueado = horariosBloqueados.includes(hora)
+                const bloqueado = horaBloqueada(hora)
                 const lleno = disp === 0 || pasado || bloqueado
                 const seleccionado = horaSeleccionada === hora
                 return (

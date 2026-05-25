@@ -7,8 +7,8 @@ const config: NegocioConfig = {
   direccion: 'Av. 20 de Diciembre 180 · Rojas',
   horario: {
     inicioMin: 9 * 60,
-    finMin: 24 * 60,
-    intervaloMinutos: 90,
+    finMin: 22 * 60 + 30 + 30,  // último slot arranca a 22:30; con intervalo 30 → finMin = 22:30 + 30 = 23:00
+    intervaloMinutos: 30,
   },
   recursos: [
     { id: 1, nombre: 'Cancha 1' },

@@ -58,6 +58,12 @@ export function formatHora(minutos: number): string {
   return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0')
 }
 
+/** Convierte "HH:MM" a minutos desde medianoche. */
+export function toMin(hora: string): number {
+  const [h, m] = hora.split(':').map(Number)
+  return h * 60 + m
+}
+
 /** Texto legible de los días hábiles. */
 export function formatDiasHabiles(dias?: number[]): string {
   if (!dias || dias.length === 7) return 'Todos los días'
