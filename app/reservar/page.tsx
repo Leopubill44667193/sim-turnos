@@ -28,7 +28,7 @@ export default function ReservarPage() {
   const [telefono, setTelefono] = useState('')
   const [cargando, setCargando] = useState(false)
   const [turnosPorHora, setTurnosPorHora] = useState<Record<string, number[]>>({})
-  const [slotsBloqList, setSlotsBloqList] = useState<Array<{ recurso_id: number; hora: string }>>([])
+  const [slotsBloqList, setSlotsBloqList] = useState<Array<{ recurso_id: number; hora: string; motivo: string | null }>>([])
   const [fechaBloqueada, setFechaBloqueada] = useState(false)
   const [diaNoHabil, setDiaNoHabil] = useState(false)
   const [horariosBloqueados, setHorariosBloqueados] = useState<string[]>([])
@@ -48,7 +48,7 @@ export default function ReservarPage() {
         supabase.from('turnos').select('hora_inicio, simulador_id').eq('fecha', fecha).eq('negocio_id', negocio.id),
         supabase.from('dias_bloqueados').select('fecha').eq('fecha', fecha).eq('negocio_id', negocio.id).single(),
         supabase.from('horarios_bloqueados').select('hora').eq('fecha', fecha).eq('negocio_id', negocio.id),
-        supabase.from('slots_bloqueados').select('recurso_id, hora').eq('fecha', fecha).eq('negocio_id', negocio.id),
+        supabase.from('slots_bloqueados').select('recurso_id, hora, motivo').eq('fecha', fecha).eq('negocio_id', negocio.id),
       ])
       if (errorFetch) {
         alert('Error al cargar disponibilidad. Recargá la página e intentá de nuevo.\n' + errorFetch.message)
@@ -63,7 +63,7 @@ export default function ReservarPage() {
         mapa[h].push(t.simulador_id)
       }
       setTurnosPorHora(mapa)
-      setSlotsBloqList((slotsBloq ?? []).map((s) => ({ recurso_id: s.recurso_id, hora: s.hora.slice(0, 5) })))
+      setSlotsBloqList((slotsBloq ?? []).map((s) => ({ recurso_id: s.recurso_id, hora: s.hora.slice(0, 5), motivo: s.motivo ?? null })))
       if (draftRef.current) {
         const { hora, recursos } = draftRef.current
         draftRef.current = null
@@ -109,7 +109,8 @@ export default function ReservarPage() {
     }
     for (const b of slotsBloqList) {
       const bm = toMin(b.hora)
-      if (s >= bm && s < bm + d) result.add(b.recurso_id)
+      const bd = b.motivo ? d : negocio.horario.intervaloMinutos
+      if (s >= bm && s < bm + bd) result.add(b.recurso_id)
     }
     return [...result]
   }

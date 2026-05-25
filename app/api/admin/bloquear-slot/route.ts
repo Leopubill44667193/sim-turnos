@@ -21,8 +21,8 @@ async function verifyAdmin(req: NextRequest): Promise<boolean> {
 
 export async function POST(req: NextRequest) {
   if (!await verifyAdmin(req)) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-  const { negocio_id, recurso_id, fecha, hora } = await req.json()
-  const { error } = await supabase.from('slots_bloqueados').insert({ negocio_id, recurso_id, fecha, hora })
+  const { negocio_id, recurso_id, fecha, hora, motivo } = await req.json()
+  const { error } = await supabase.from('slots_bloqueados').insert({ negocio_id, recurso_id, fecha, hora, ...(motivo ? { motivo } : {}) })
   if (error) { console.error('[bloquear-slot POST]', error); return NextResponse.json({ error: error.message }, { status: 500 }) }
   return NextResponse.json({ ok: true })
 }
