@@ -25,7 +25,7 @@ Sistema de reservas online configurable por negocio. Un solo repo, una sola base
 |----|---------|-----------|----------|---------|
 | `sim-turnos` | OC.Hobbies.Racing | Av. 3 de Febrero 283, Rojas | 4 simuladores, 60 min | 15:00-02:00 todos los días |
 | `prgrssv` | Prgrssv | Zeballos 2239 6A, Rosario | 1 peluquero, 30 min | 09:00-19:30 Lun-Vie |
-| `lacancha` | La Cancha Padel | Av. 20 de Diciembre 130, Rojas | 4 canchas, 90 min | 09:00-00:00 todos los días |
+| `lacancha` | La Cancha Padel | Av. 20 de Diciembre 180, Rojas | 4 canchas, intervalo 30 min, turno 90 min | 09:00-22:30 todos los días |
 | `demo-padel` | Club Demo Pádel | Av. Siempreviva 742, Rosario | 4 canchas, 90 min | 09:00-00:00 todos los días |
 
 ## Dominios
@@ -145,8 +145,8 @@ No hay tests configurados y no se deben agregar salvo que se pida explícitament
     limiteReservasPorIP?: number  // número máximo de reservas permitidas por IP en una ventana de 24 horas. Si está undefined, no se aplica límite.
   }
   anticipacionMinHs?: number      // bloquea slots con menos de N horas de anticipación desde ahora (aplica en días futuros también). undefined = sin restricción
-  cancelacionMinHs?: number       // horas mínimas de anticipación para cancelar sin contactar al local. Se muestra en /cancelar/[token]
-  whatsappNegocio?: string        // número WhatsApp del local sin + ni espacios, ej: "5492474470920". Se usa en el botón de contacto de /confirmado
+  cancelacionMinHs?: number       // horas mínimas de anticipación para cancelar sin contactar al local. Se muestra en /cancelar/[token]. lacancha: 6
+  whatsappNegocio?: string        // número WhatsApp del local sin + ni espacios, ej: "5492474470920". Se usa en el botón de contacto de /confirmado. lacancha: '5492474661495'
   fontTitle?: string              // fuente para títulos, cargada desde Google Fonts vía next/font. Ej: 'Bebas Neue'
   bgTexture?: 'grid'              // textura de fondo sutil. 'grid' = grilla verde semitransparente
 }
@@ -262,6 +262,12 @@ RLS deshabilitado (misma anon key para todos).
 
 Usada por `/api/admin/bloquear-slot` para bloquear slots individuales desde el admin. El flujo de reserva consulta esta tabla para excluir esos slots de la disponibilidad. Migración ejecutada el 2026-05-19.
 
+**Semántica de `motivo`:** determina el rango de cobertura del bloqueo en el flujo de reserva.
+- **Con motivo** (turno fijo, ej: "Dai Pergolesi"): bloquea durante `duracionMinutos` (90 min en lacancha). Un cliente no puede reservar ese slot ni los sub-slots hasta que termine el bloqueo.
+- **Sin motivo** (bloqueo genérico): bloquea solo durante `intervaloMinutos` (30 min en lacancha). Cubre exactamente ese slot de 30 min.
+
+En la grilla del admin, el slot de inicio con motivo se muestra en azul con el nombre; los slots de continuación (+30min, +60min) se muestran como `↳ [motivo]` en azul tenue y no son clickeables.
+
 ```sql
 CREATE TABLE slots_bloqueados (
   id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -291,7 +297,7 @@ RLS deshabilitado.
 | `/cancelar/[token]` | Cancelación self-service, sin login |
 | `/cancelar` | Redirige a /mis-turnos |
 | `/mis-turnos` | Buscar turnos propios por teléfono |
-| `/admin` | Panel con cuatro pestañas: Resumen / Próximos / Todos / Por día. Resumen muestra métricas de hoy, semana y mes. Por día incluye grilla + tabla + bloqueos. En la grilla: click en celda libre → bloquea ese slot individual (ámbar, `slots_bloqueados`); click en label de hora → bloquea/desbloquea todos los slots libres de esa fila a la vez |
+| `/admin` | Panel con cuatro pestañas: Resumen / Próximos / Todos / Por día. Resumen muestra métricas de hoy, semana y mes. Por día incluye grilla + tabla + bloqueos. En la grilla: click en celda libre → abre input de motivo; sin motivo → bloqueo genérico ámbar (`slots_bloqueados`); con motivo → bloqueo azul con nombre, slots +30/+60 muestran `↳ [motivo]`; click en label de hora → bloquea/desbloquea todos los slots libres de esa fila a la vez. Flechas ‹ › junto al selector de fecha para navegar días sin abrir el calendario. |
 | `/api/notificar` | POST server-side → Twilio Content Templates: admin (TO_1/TO_2) + cliente |
 | `/api/validar-reserva` | POST server-side → valida nombre/teléfono y límite por IP antes del insert |
 | `/api/admin/bloquear-slot` | POST/DELETE server-side → bloquea o desbloquea un slot individual (recurso + fecha + hora) en `slots_bloqueados`. Requiere cookie `admin_session`. |
@@ -338,6 +344,16 @@ Endpoint POST llamado desde el cliente antes de insertar un turno. Recibe `{ neg
 La IP se lee de `x-forwarded-for` (Vercel) con fallback a `x-real-ip`. El mapa `configs` se exporta desde `config/index.ts` para que el endpoint pueda leer la config de cualquier negocio sin depender de `NEXT_PUBLIC_NEGOCIO_ID`.
 
 Valores actuales de `limiteReservasPorIP`: `lacancha` = 2, `sim-turnos` = 4, `prgrssv` = 1.
+
+### Lógica de disponibilidad por rango (`horaConflicto` / `recursosOcupados`)
+
+Un slot de cliente en hora `S` está no disponible si existe un turno o bloqueo en hora `T` tal que `S >= T && S < T + duración`.
+
+- **Turnos reales** y **bloqueos con motivo**: duración = `negocio.duracionMinutos` (90 min en lacancha). Bloquean los sub-slots del turno completo.
+- **Bloqueos sin motivo** (`slots_bloqueados` con `motivo = null`): duración = `negocio.horario.intervaloMinutos` (30 min). Bloquean exactamente ese slot.
+- **`horarios_bloqueados`** (bloqueo de todos los recursos a la vez): siempre usa `duracionMinutos`.
+
+La fórmula es unidireccional: un slot en 15:30 NO es bloqueado por un turno que empieza a las 16:00, aunque la reserva a las 15:30 terminaría a las 17:00 y solaparía. Solo se verifica si el inicio del nuevo slot cae dentro del rango del evento existente.
 
 ### Deduplicación de clientes por teléfono
 Antes de insertar un turno se busca si ya existe un cliente con ese teléfono y negocio_id. Si existe se reutiliza el id y se actualiza el nombre. La query usa `.single()` que devuelve 406 si no encuentra fila — esto es normal y el código lo maneja.
