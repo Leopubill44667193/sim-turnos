@@ -478,9 +478,7 @@ export default function Admin() {
                       const turno = grillaMap[hora]?.[r.id]
                       return (
                         <td key={r.id} className="p-2">
-                          {diaBloqueado ? (
-                            <div className="rounded-lg p-2 text-center border border-yellow-500/10 text-yellow-900 text-xs">bloq.</div>
-                          ) : turno ? (
+                          {turno ? (
                             <div className="bg-[var(--accent)]/10 border border-[var(--accent)]/30 rounded-lg p-2 text-center group relative">
                               <p className="text-xs font-bold text-[var(--accent)]/80 truncate">{turno.clientes?.nombre}</p>
                               <p className="text-xs text-gray-600">{turno.clientes?.telefono}</p>
@@ -489,6 +487,8 @@ export default function Admin() {
                                 className="absolute top-1 right-1 text-[var(--accent)]/50 hover:text-[var(--accent)]/80 text-xs opacity-0 group-hover:opacity-100 transition"
                               >✕</button>
                             </div>
+                          ) : diaBloqueado ? (
+                            <div className="rounded-lg p-2 text-center border border-yellow-500/10 text-yellow-900 text-xs">bloq.</div>
                           ) : horariosBloqueados.has(hora) ? (
                             <button onClick={() => toggleHorario(hora)} className="w-full rounded-lg p-2 text-center border border-orange-500/20 text-orange-800 text-xs hover:border-orange-500/40 transition">
                               bloq. ✕

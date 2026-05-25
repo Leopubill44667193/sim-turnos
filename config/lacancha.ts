@@ -4,7 +4,7 @@ const config: NegocioConfig = {
   id: 'lacancha',
   nombre: 'La Cancha Padel',
   nombreDisplay: { parte1: 'La Cancha Padel' },
-  direccion: 'Av. 20 de Diciembre 130 · Rojas',
+  direccion: 'Av. 20 de Diciembre 180 · Rojas',
   horario: {
     inicioMin: 9 * 60,
     finMin: 24 * 60,
@@ -24,8 +24,8 @@ const config: NegocioConfig = {
   seleccionSimple: true,
   tema: { accent: '#22c55e', accentHover: '#16a34a', bg: '#0c1a10' },
   features: { multiRecurso: true, limiteReservasPorIP: 2 },
-  cancelacionMinHs: 3,
-  whatsappNegocio: '5492474470920',
+  cancelacionMinHs: 6,
+  whatsappNegocio: '5492474661495',
   fontTitle: 'Bebas Neue',
   bgTexture: 'grid',
 }
