@@ -23,7 +23,7 @@ const RECURSOS = negocio.recursos
 const DIAS_LABEL = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
 function hoy() {
-  return new Date().toISOString().slice(0, 10)
+  return new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 10)
 }
 
 function lunesDeRef(ref: Date): string {
@@ -34,13 +34,17 @@ function lunesDeRef(ref: Date): string {
 }
 
 function inicioMes(offset: number): string {
-  const d = new Date()
-  return new Date(d.getFullYear(), d.getMonth() + offset, 1).toISOString().slice(0, 10)
+  const ar = new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 10)
+  const [y, m] = ar.split('-').map(Number)
+  const d = new Date(y, m - 1 + offset, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
 function finMes(offset: number): string {
-  const d = new Date()
-  return new Date(d.getFullYear(), d.getMonth() + offset + 1, 0).toISOString().slice(0, 10)
+  const ar = new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 10)
+  const [y, m] = ar.split('-').map(Number)
+  const d = new Date(y, m - 1 + offset + 1, 0)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function DiffBadge({ diff }: { diff: number }) {
@@ -63,19 +67,31 @@ export default function Admin() {
   const [slotMotivo, setSlotMotivo] = useState('')
   const [mostrarPasados, setMostrarPasados] = useState(false)
   const [resumenTurnos, setResumenTurnos] = useState<Turno[]>([])
+  const [resumenSlots, setResumenSlots] = useState<{ fecha: string; recurso_id: number; hora: string; motivo: string | null }[]>([])
+  const [proximosSlots, setProximosSlots] = useState<{ id: string; fecha: string; recurso_id: number; hora: string; motivo: string }[]>([])
   const [loadingResumen, setLoadingResumen] = useState(false)
   const [slotsBloqueados, setSlotsBloqueados] = useState<Record<string, string | null>>({})
   const [procesandoHora, setProcesandoHora] = useState<Set<string>>(new Set())
 
   const fetchResumen = async () => {
     setLoadingResumen(true)
-    const { data, error } = await supabase
-      .from('turnos')
-      .select('id, fecha, hora_inicio, hora_fin, simulador_id')
-      .eq('negocio_id', negocio.id)
-      .gte('fecha', inicioMes(-1))
-      .lte('fecha', hoy())
+    const [{ data, error }, { data: slotsData }] = await Promise.all([
+      supabase
+        .from('turnos')
+        .select('id, fecha, hora_inicio, hora_fin, simulador_id')
+        .eq('negocio_id', negocio.id)
+        .gte('fecha', inicioMes(-1))
+        .lte('fecha', finMes(0)),
+      supabase
+        .from('slots_bloqueados')
+        .select('fecha, recurso_id, hora, motivo')
+        .eq('negocio_id', negocio.id)
+        .gte('fecha', inicioMes(-1))
+        .lte('fecha', finMes(0)),
+    ])
+    console.log('fetchResumen query resultado:', { data, error, slotsData, inicioMes: inicioMes(-1), finMes: finMes(0) })
     if (!error && data) setResumenTurnos(data as unknown as Turno[])
+    if (slotsData) setResumenSlots(slotsData)
     setLoadingResumen(false)
   }
 
@@ -98,8 +114,24 @@ export default function Admin() {
     if (modo === 'dia') query = query.eq('fecha', fecha)
     else if (modo === 'proximos') query = query.gte('fecha', hoy())
     query = query.order('fecha', { ascending: true }).order('hora_inicio', { ascending: true })
-    const { data, error } = await query
-    if (!error && data) setTurnos(data as unknown as Turno[])
+    if (modo === 'proximos') {
+      const [{ data, error }, { data: slotsData }] = await Promise.all([
+        query,
+        supabase
+          .from('slots_bloqueados')
+          .select('id, fecha, recurso_id, hora, motivo')
+          .eq('negocio_id', negocio.id)
+          .gte('fecha', hoy())
+          .not('motivo', 'is', null)
+          .neq('motivo', ''),
+      ])
+      if (!error && data) setTurnos(data as unknown as Turno[])
+      if (slotsData) setProximosSlots(slotsData as { id: string; fecha: string; recurso_id: number; hora: string; motivo: string }[])
+    } else {
+      const { data, error } = await query
+      if (!error && data) setTurnos(data as unknown as Turno[])
+      setProximosSlots([])
+    }
     setLoading(false)
   }
 
@@ -219,17 +251,25 @@ export default function Admin() {
 
   // ── Métricas resumen ──────────────────────────────────────────────────
   const todayStr = hoy()
+  const slotsConMotivo = resumenSlots.filter(s => s.motivo && s.motivo.trim() !== '')
+  console.log('todayStr:', todayStr, 'fechas:', resumenTurnos.map(t => t.fecha))
 
   const turnosHoy = resumenTurnos.filter(t => t.fecha === todayStr)
+  const slotsHoy = slotsConMotivo.filter(s => s.fecha === todayStr)
+  const totalHoy = turnosHoy.length + slotsHoy.length
   const esHabilHoy = esDiaHabil(todayStr, negocio.diasHabiles)
   const posiblesHoy = esHabilHoy ? HORARIOS.length * RECURSOS.length : 0
-  const ocupacionPct = posiblesHoy > 0 ? Math.round(turnosHoy.length / posiblesHoy * 100) : 0
+  const ocupacionPct = posiblesHoy > 0 ? Math.round(totalHoy / posiblesHoy * 100) : 0
 
   const ahoraDate = new Date()
   const ocupadosAhora = turnosHoy.filter(t => {
     const ini = new Date(`${todayStr}T${t.hora_inicio.slice(0, 5)}`)
     const fin = new Date(`${todayStr}T${t.hora_fin.slice(0, 5)}`)
     if (fin <= ini) fin.setDate(fin.getDate() + 1)
+    return ini <= ahoraDate && ahoraDate < fin
+  }).length + slotsHoy.filter(s => {
+    const ini = new Date(`${todayStr}T${s.hora.slice(0, 5)}`)
+    const fin = new Date(ini.getTime() + negocio.duracionMinutos * 60000)
     return ini <= ahoraDate && ahoraDate < fin
   }).length
 
@@ -244,11 +284,13 @@ export default function Admin() {
     return d.toISOString().slice(0, 10)
   })()
 
-  const turnosEstaSemana = resumenTurnos.filter(t => t.fecha >= lunesEsta && t.fecha <= todayStr)
-  const turnosSemPasada = resumenTurnos.filter(t => t.fecha >= lunesPasada && t.fecha <= finComparacion)
-  const diffSemana = turnosSemPasada.length > 0
-    ? Math.round((turnosEstaSemana.length - turnosSemPasada.length) / turnosSemPasada.length * 100)
-    : turnosEstaSemana.length > 0 ? 100 : 0
+  const turnosEstaSemana = resumenTurnos.filter(t => t.fecha >= lunesEsta && t.fecha <= todayStr).length
+    + slotsConMotivo.filter(s => s.fecha >= lunesEsta && s.fecha <= todayStr).length
+  const turnosSemPasada = resumenTurnos.filter(t => t.fecha >= lunesPasada && t.fecha <= finComparacion).length
+    + slotsConMotivo.filter(s => s.fecha >= lunesPasada && s.fecha <= finComparacion).length
+  const diffSemana = turnosSemPasada > 0
+    ? Math.round((turnosEstaSemana - turnosSemPasada) / turnosSemPasada * 100)
+    : turnosEstaSemana > 0 ? 100 : 0
 
   const barData = DIAS_LABEL.map((nombre, i) => {
     const d = new Date(lunesEsta + 'T12:00:00')
@@ -257,18 +299,21 @@ export default function Admin() {
     return {
       nombre,
       fechaStr,
-      count: resumenTurnos.filter(t => t.fecha === fechaStr).length,
+      count: resumenTurnos.filter(t => t.fecha === fechaStr).length
+        + slotsConMotivo.filter(s => s.fecha === fechaStr).length,
       esFuturo: fechaStr > todayStr,
     }
   })
   const maxBar = Math.max(...barData.map(d => d.count), 1)
 
   const inicioEsteMes = inicioMes(0)
-  const turnosEsteMes = resumenTurnos.filter(t => t.fecha >= inicioEsteMes && t.fecha <= todayStr)
-  const turnosMesAnt = resumenTurnos.filter(t => t.fecha >= inicioMes(-1) && t.fecha <= finMes(-1))
-  const diffMes = turnosMesAnt.length > 0
-    ? Math.round((turnosEsteMes.length - turnosMesAnt.length) / turnosMesAnt.length * 100)
-    : turnosEsteMes.length > 0 ? 100 : 0
+  const turnosEsteMes = resumenTurnos.filter(t => t.fecha >= inicioEsteMes && t.fecha <= todayStr).length
+    + slotsConMotivo.filter(s => s.fecha >= inicioEsteMes && s.fecha <= todayStr).length
+  const turnosMesAnt = resumenTurnos.filter(t => t.fecha >= inicioMes(-1) && t.fecha <= finMes(-1)).length
+    + slotsConMotivo.filter(s => s.fecha >= inicioMes(-1) && s.fecha <= finMes(-1)).length
+  const diffMes = turnosMesAnt > 0
+    ? Math.round((turnosEsteMes - turnosMesAnt) / turnosMesAnt * 100)
+    : turnosEsteMes > 0 ? 100 : 0
   // ─────────────────────────────────────────────────────────────────────
 
   const turnosFiltrados = modo === 'dia' && !mostrarPasados
@@ -316,10 +361,45 @@ export default function Admin() {
     weekday: 'long', day: 'numeric', month: 'long'
   })
 
+  const slotHoraFin = (hora: string) => {
+    const [h, m] = hora.slice(0, 5).split(':').map(Number)
+    const fin = h * 60 + m + negocio.duracionMinutos
+    return `${String(Math.floor(fin / 60) % 24).padStart(2, '0')}:${String(fin % 60).padStart(2, '0')}`
+  }
+
+  const proximosCombinados = modo === 'proximos' ? [
+    ...turnosFiltrados.map(t => ({
+      key: t.id,
+      fecha: t.fecha,
+      recursoNombre: RECURSOS.find(r => r.id === t.simulador_id)?.nombre ?? t.simuladores?.nombre ?? '',
+      clienteNombre: t.clientes?.nombre ?? '',
+      telefono: t.clientes?.telefono ?? '—',
+      horaInicio: t.hora_inicio?.slice(0, 5) ?? '',
+      horaFin: t.hora_fin?.slice(0, 5) ?? '',
+      email: t.email_verificacion ?? '—',
+      reservado: (() => { const d = new Date(t.created_at); d.setHours(d.getHours() - 3); return d.toLocaleString('es-AR', { hour12: false }) })(),
+      esSlot: false as const,
+      turnoId: t.id,
+    })),
+    ...proximosSlots.map(s => ({
+      key: s.id,
+      fecha: s.fecha,
+      recursoNombre: RECURSOS.find(r => r.id === s.recurso_id)?.nombre ?? `Recurso ${s.recurso_id}`,
+      clienteNombre: s.motivo,
+      telefono: '—',
+      horaInicio: s.hora.slice(0, 5),
+      horaFin: slotHoraFin(s.hora),
+      email: '—',
+      reservado: '—',
+      esSlot: true as const,
+      turnoId: undefined,
+    })),
+  ].sort((a, b) => a.fecha.localeCompare(b.fecha) || a.horaInicio.localeCompare(b.horaInicio)) : []
+
   const subtitulo = modo === 'resumen'
     ? 'Resumen general'
     : modo === 'proximos'
-    ? `Próximos turnos · ${turnosFiltrados.length} turnos`
+    ? `Próximos turnos · ${proximosCombinados.length} turnos`
     : modo === 'todos'
     ? `Todos los turnos · ${turnosFiltrados.length} turnos`
     : `${fechaFormateada} · ${turnosFiltrados.length} turnos`
@@ -435,7 +515,7 @@ export default function Admin() {
                 <p className="text-xs tracking-[0.4em] uppercase text-[var(--accent)] mb-4">Hoy</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   {([
-                    { valor: turnosHoy.length, label: 'Turnos confirmados' },
+                    { valor: totalHoy, label: 'Turnos confirmados' },
                     { valor: posiblesHoy, label: 'Turnos posibles' },
                     { valor: `${ocupacionPct}%`, label: 'Ocupación' },
                     { valor: ocupadosAhora, label: `${negocio.recursoNombrePlural} ahora mismo` },
@@ -453,9 +533,9 @@ export default function Admin() {
                 <p className="text-xs tracking-[0.4em] uppercase text-[var(--accent)] mb-4">Esta semana</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-                    <p className="text-3xl font-black">{turnosEstaSemana.length}</p>
+                    <p className="text-3xl font-black">{turnosEstaSemana}</p>
                     <p className="text-xs text-gray-500 mt-1 mb-3 uppercase tracking-widest">
-                      Lun–{DIAS_LABEL[diasDesdeL]} · {turnosSemPasada.length} la semana pasada
+                      Lun–{DIAS_LABEL[diasDesdeL]} · {turnosSemPasada} la semana pasada
                     </p>
                     <DiffBadge diff={diffSemana} />
                     <span className="text-xs text-gray-600 ml-2">vs semana pasada</span>
@@ -494,9 +574,9 @@ export default function Admin() {
                 <p className="text-xs tracking-[0.4em] uppercase text-[var(--accent)] mb-4">Este mes</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-                    <p className="text-3xl font-black">{turnosEsteMes.length}</p>
+                    <p className="text-3xl font-black">{turnosEsteMes}</p>
                     <p className="text-xs text-gray-500 mt-1 mb-3 uppercase tracking-widest">
-                      Turnos este mes · {turnosMesAnt.length} el mes anterior
+                      Turnos este mes · {turnosMesAnt} el mes anterior
                     </p>
                     <DiffBadge diff={diffMes} />
                     <span className="text-xs text-gray-600 ml-2">vs mes anterior</span>
@@ -603,6 +683,45 @@ export default function Admin() {
               </tbody>
             </table>
           </div>
+        ) : modo === 'proximos' ? (
+          proximosCombinados.length === 0 ? (
+            <p className="text-gray-600">No hay turnos próximos.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-white/10">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/10">
+                    <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Fecha</th>
+                    <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">{negocio.recursoNombre}</th>
+                    <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Cliente</th>
+                    <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Telefono</th>
+                    <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Email</th>
+                    <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Horario</th>
+                    <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Reservado</th>
+                    <th className="p-4"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {proximosCombinados.map(f => (
+                    <tr key={f.key} className="border-b border-white/5 hover:bg-white/5 transition">
+                      <td className="p-4 text-gray-400 text-xs">{new Date(f.fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })}</td>
+                      <td className="p-4 font-medium">{f.recursoNombre}</td>
+                      <td className="p-4">{f.clienteNombre}</td>
+                      <td className="p-4 text-gray-400">{f.telefono}</td>
+                      <td className="p-4 text-gray-400 text-xs">{f.email}</td>
+                      <td className="p-4">{f.horaInicio} - {f.horaFin}</td>
+                      <td className="p-4 text-gray-600 text-xs">{f.reservado}</td>
+                      <td className="p-4">
+                        {!f.esSlot && (
+                          <button onClick={() => handleDelete(f.turnoId!)} className="text-[var(--accent)] hover:text-[var(--accent)]/80 text-xs uppercase tracking-widest transition">Eliminar</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
         ) : turnosFiltrados.length === 0 ? (
           <p className="text-gray-600">{modo === 'dia' ? 'No hay turnos para este día.' : 'No hay turnos.'}</p>
         ) : (
