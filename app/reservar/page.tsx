@@ -234,9 +234,11 @@ export default function ReservarPage() {
 
   async function notificarReserva(nombre: string, telefono: string, fecha: string, hora: string, recursos: number[], tokens: string[]) {
     const fechaFmt = new Date(fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })
-    const recursoTexto = recursos.length === 1
-      ? `${negocio.recursoNombre} ${recursos[0]}`
-      : `${negocio.recursoNombrePlural} ${recursos.join(', ')}`
+    const recursoTexto = negocio.features?.asignacionAutomatica
+      ? negocio.recursoNombre
+      : recursos.length === 1
+        ? `${negocio.recursoNombre} ${recursos[0]}`
+        : `${negocio.recursoNombrePlural} ${recursos.join(', ')}`
     const linkCancelacion = tokens.map(t => `${window.location.origin}/cancelar/${t}`).join('\n')
     await fetch('/api/notificar', {
       method: 'POST',
@@ -385,11 +387,11 @@ export default function ReservarPage() {
             <p className="text-xs uppercase tracking-widest text-gray-500 mb-4">Tus datos</p>
             <div className="mb-4">
               <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Nombre y apellido</label>
-              <input type="text" className="bg-white/5 border border-white/10 rounded-xl p-3 w-full text-white focus:border-[var(--accent)] outline-none text-sm" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Juan Pérez" />
+              <input type="text" className="bg-white/5 border border-white/10 rounded-xl p-3 w-full text-white focus:border-[var(--accent)] outline-none text-sm" value={nombre} onChange={(e) => { const val = e.target.value.replace(/(?:^|\s)\S/g, c => c.toUpperCase()); setNombre(val) }} placeholder="Juan Pérez" />
             </div>
             <div>
               <label className="block text-xs uppercase tracking-widest text-gray-500 mb-2">Telefono</label>
-              <input type="tel" className="bg-white/5 border border-white/10 rounded-xl p-3 w-full text-white focus:border-[var(--accent)] outline-none text-sm" value={telefono} onChange={(e) => setTelefono(e.target.value.replace(/[^0-9]/g, ''))} placeholder="11 1234-5678" />
+              <input type="tel" className="bg-white/5 border border-white/10 rounded-xl p-3 w-full text-white focus:border-[var(--accent)] outline-none text-sm" value={telefono} onChange={(e) => setTelefono(e.target.value.replace(/[^0-9]/g, ''))} placeholder={negocio.telefonoPlaceholder ?? '11 1234-5678'} />
             </div>
           </div>
         )}

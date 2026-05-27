@@ -65,6 +65,8 @@ export default function Admin() {
   const [horariosBloqueados, setHorariosBloqueados] = useState<Record<string, string | null>>({})
   const [slotActivo, setSlotActivo] = useState<{ hora: string; recursoId: number } | null>(null)
   const [slotMotivo, setSlotMotivo] = useState('')
+  const [slotNombre, setSlotNombre] = useState('')
+  const [slotTelefono, setSlotTelefono] = useState('')
   const [mostrarPasados, setMostrarPasados] = useState(false)
   const [resumenTurnos, setResumenTurnos] = useState<Turno[]>([])
   const [resumenSlots, setResumenSlots] = useState<{ fecha: string; recurso_id: number; hora: string; motivo: string | null }[]>([])
@@ -185,6 +187,31 @@ export default function Admin() {
     await Promise.all(ops)
     setSlotsBloqueados(nuevosSlots)
     setProcesandoHora((prev) => { const s = new Set(prev); s.delete(hora); return s })
+  }
+
+  const cargarTurnoManual = async (hora: string, recursoId: number, nombre: string, telefono: string) => {
+    const [h, m] = hora.split(':').map(Number)
+    const total = h * 60 + m + negocio.duracionMinutos
+    const horaFin = String(Math.floor(total / 60) % 24).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0')
+    let clienteId: string
+    if (telefono) {
+      const { data: existente } = await supabase.from('clientes').select('id').eq('telefono', telefono).eq('negocio_id', negocio.id).single()
+      if (existente) {
+        clienteId = existente.id
+        await supabase.from('clientes').update({ nombre }).eq('id', clienteId)
+      } else {
+        const { data: nuevo } = await supabase.from('clientes').insert({ nombre, telefono, negocio_id: negocio.id }).select('id').single()
+        if (!nuevo) return
+        clienteId = nuevo.id
+      }
+    } else {
+      const { data: nuevo } = await supabase.from('clientes').insert({ nombre, negocio_id: negocio.id }).select('id').single()
+      if (!nuevo) return
+      clienteId = nuevo.id
+    }
+    await supabase.from('turnos').insert({ negocio_id: negocio.id, simulador_id: recursoId, cliente_id: clienteId, fecha, hora_inicio: hora, hora_fin: horaFin })
+    await fetchTurnos()
+    setSlotActivo(null); setSlotNombre(''); setSlotTelefono('')
   }
 
   const toggleSlot = async (hora: string, recursoId: number) => {
@@ -645,30 +672,42 @@ export default function Admin() {
                                   bloqueado ✕
                                 </button>
                           ) : slotActivo?.hora === hora && slotActivo?.recursoId === r.id ? (
-                            <div className="rounded-lg p-1.5 border border-white/15 text-xs flex items-center gap-1">
+                            <div className="rounded-lg p-1.5 border border-white/15 text-xs flex flex-col gap-1">
                               <input
                                 type="text"
-                                value={slotMotivo}
-                                onChange={e => setSlotMotivo(e.target.value)}
-                                onKeyDown={async e => {
-                                  if (e.key === 'Enter') {
-                                    if (slotMotivo.trim()) await bloquearConMotivo(hora, r.id, slotMotivo.trim())
-                                    else { await toggleSlot(hora, r.id); setSlotActivo(null); setSlotMotivo('') }
-                                  }
-                                  if (e.key === 'Escape') { setSlotActivo(null); setSlotMotivo('') }
-                                }}
-                                placeholder="motivo..."
-                                className="flex-1 bg-transparent text-white outline-none placeholder-gray-700 min-w-0 text-xs"
+                                value={slotNombre}
+                                onChange={e => setSlotNombre(e.target.value)}
+                                placeholder="Nombre cliente*"
+                                className="bg-transparent text-white outline-none placeholder-gray-700 text-xs w-full"
                                 autoFocus
                               />
-                              <button
-                                onClick={async () => {
-                                  if (slotMotivo.trim()) await bloquearConMotivo(hora, r.id, slotMotivo.trim())
-                                  else { await toggleSlot(hora, r.id); setSlotActivo(null); setSlotMotivo('') }
-                                }}
-                                className="text-green-500 hover:text-green-400 transition shrink-0"
-                              >✓</button>
-                              <button onClick={() => { setSlotActivo(null); setSlotMotivo('') }} className="text-gray-600 hover:text-gray-400 transition shrink-0">✕</button>
+                              <input
+                                type="text"
+                                value={slotTelefono}
+                                onChange={e => setSlotTelefono(e.target.value.replace(/[^0-9]/g, ''))}
+                                placeholder="Teléfono (opcional)"
+                                className="bg-transparent text-white outline-none placeholder-gray-700 text-xs w-full"
+                              />
+                              <div className="flex gap-1 justify-end">
+                                <button
+                                  onClick={async () => {
+                                    if (!slotNombre.trim()) return
+                                    await cargarTurnoManual(hora, r.id, slotNombre.trim(), slotTelefono.trim())
+                                  }}
+                                  className="text-green-500 hover:text-green-400 transition text-xs px-2 py-1 rounded border border-green-500/40 hover:bg-green-500/10"
+                                >Turno ✓</button>
+                                <button
+                                  onClick={async () => {
+                                    await toggleSlot(hora, r.id)
+                                    setSlotActivo(null); setSlotNombre(''); setSlotTelefono('')
+                                  }}
+                                  className="text-amber-500 hover:text-amber-400 transition text-xs px-2 py-1 rounded border border-amber-500/40 hover:bg-amber-500/10"
+                                >Bloquear</button>
+                                <button
+                                  onClick={() => { setSlotActivo(null); setSlotNombre(''); setSlotTelefono('') }}
+                                  className="text-gray-600 hover:text-gray-400 transition text-xs px-2 py-1 rounded border border-white/10 hover:bg-white/5"
+                                >✕</button>
+                              </div>
                             </div>
                           ) : (
                             <button onClick={() => setSlotActivo({ hora, recursoId: r.id })} className="w-full rounded-lg p-2 text-center border border-white/5 text-gray-800 text-xs hover:border-white/20 hover:text-gray-600 transition">
@@ -703,7 +742,7 @@ export default function Admin() {
                 </thead>
                 <tbody>
                   {proximosCombinados.map(f => (
-                    <tr key={f.key} className="border-b border-white/5 hover:bg-white/5 transition">
+                    <tr key={f.key} className={'border-b border-white/5 hover:bg-white/5 transition' + (esPasado(f.fecha, f.horaInicio) ? ' opacity-40' : '')}>
                       <td className="p-4 text-gray-400 text-xs">{new Date(f.fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })}</td>
                       <td className="p-4 font-medium">{f.recursoNombre}</td>
                       <td className="p-4">{f.clienteNombre}</td>

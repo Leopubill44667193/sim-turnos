@@ -33,6 +33,7 @@ export type NegocioConfig = {
     limiteReservasPorIP?: number
     asignacionAutomatica?: boolean
   }
+  telefonoPlaceholder?: string
   anticipacionMinHs?: number    // bloquea slots con menos de N horas de anticipación
   cancelacionMinHs?: number     // horas mínimas de anticipación para cancelar sin contactar al local
   whatsappNegocio?: string      // número de WhatsApp del local sin +, ej: "5492474470920"

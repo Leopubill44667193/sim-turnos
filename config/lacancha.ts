@@ -24,6 +24,7 @@ const config: NegocioConfig = {
   seleccionSimple: true,
   tema: { accent: '#22c55e', accentHover: '#16a34a', bg: '#0c1a10' },
   features: { multiRecurso: true, limiteReservasPorIP: 2, asignacionAutomatica: true },
+  telefonoPlaceholder: '2474 123456',
   cancelacionMinHs: 6,
   whatsappNegocio: '5492474661495',
   fontTitle: 'Bebas Neue',

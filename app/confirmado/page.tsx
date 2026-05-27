@@ -18,7 +18,9 @@ function Confirmado() {
     ? new Date(fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })
     : ''
 
-  const nombreRecurso = (id: string) => negocio.recursos.find(r => r.id === Number(id))?.nombre ?? `${negocio.recursoNombre} ${id}`
+  const nombreRecurso = (id: string) => negocio.features?.asignacionAutomatica
+    ? negocio.recursoNombre
+    : negocio.recursos.find(r => r.id === Number(id))?.nombre ?? `${negocio.recursoNombre} ${id}`
 
   const waTexto = encodeURIComponent(
     `Reserva ${negocio.nombre}\n📅 ${fechaFormateada}\n⏰ ${horas.length > 1 ? horas.join(", ") : hora} hs\n${negocio.emoji ?? '🏎'} ${simus.map(s => nombreRecurso(s)).join(', ')}\n\nLinks de cancelación:\n` +
