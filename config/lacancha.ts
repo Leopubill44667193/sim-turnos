@@ -23,7 +23,7 @@ const config: NegocioConfig = {
   emoji: '🎾',
   seleccionSimple: true,
   tema: { accent: '#22c55e', accentHover: '#16a34a', bg: '#0c1a10' },
-  features: { multiRecurso: true, limiteReservasPorIP: 2 },
+  features: { multiRecurso: true, limiteReservasPorIP: 2, asignacionAutomatica: true },
   cancelacionMinHs: 6,
   whatsappNegocio: '5492474661495',
   fontTitle: 'Bebas Neue',

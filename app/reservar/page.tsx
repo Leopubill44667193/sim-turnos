@@ -105,12 +105,12 @@ export default function ReservarPage() {
     const result = new Set<number>()
     for (const [h, ids] of Object.entries(turnosPorHora)) {
       const t = toMin(h)
-      if (s >= t && s < t + d) ids.forEach(id => result.add(id))
+      if (s < t + d && t < s + d) ids.forEach(id => result.add(id))
     }
     for (const b of slotsBloqList) {
       const bm = toMin(b.hora)
       const bd = b.motivo ? d : negocio.horario.intervaloMinutos
-      if (s >= bm && s < bm + bd) result.add(b.recurso_id)
+      if (s < bm + bd && bm < s + d) result.add(b.recurso_id)
     }
     return [...result]
   }
@@ -154,6 +154,18 @@ export default function ReservarPage() {
       return
     }
 
+    let recursosAUsar = recursosSeleccionados
+    if (negocio.features?.asignacionAutomatica) {
+      const ocupados = recursosOcupados(horaSeleccionada)
+      const libre = RECURSOS.find(r => !ocupados.includes(r.id))
+      if (!libre) {
+        alert('No hay canchas disponibles para ese horario.')
+        setCargando(false)
+        return
+      }
+      recursosAUsar = [libre.id]
+    }
+
     const validacion = await fetch('/api/validar-reserva', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -187,7 +199,7 @@ export default function ReservarPage() {
       .eq('negocio_id', negocio.id)
       .eq('fecha', fecha)
       .eq('hora_inicio', horaSeleccionada)
-      .in('simulador_id', recursosSeleccionados)
+      .in('simulador_id', recursosAUsar)
     if (ocupados && ocupados.length > 0) {
       alert('Ese horario ya fue reservado por otro. Por favor elegí otro horario.')
       setCargando(false)
@@ -195,7 +207,7 @@ export default function ReservarPage() {
     }
 
     const tokens: string[] = []
-    for (const simId of recursosSeleccionados) {
+    for (const simId of recursosAUsar) {
       const { data: turnoCreado, error: errorTurno } = await supabase.from('turnos').insert({
         negocio_id: negocio.id,
         simulador_id: simId,
@@ -216,8 +228,8 @@ export default function ReservarPage() {
       tokens.push(turnoCreado.cancel_token)
     }
 
-    await notificarReserva(nombre, telefono, fecha, horaSeleccionada, recursosSeleccionados, tokens)
-    router.push(`/confirmado?tokens=${tokens.join(',')}&fecha=${fecha}&hora=${horaSeleccionada}&simus=${recursosSeleccionados.join(',')}`)
+    await notificarReserva(nombre, telefono, fecha, horaSeleccionada, recursosAUsar, tokens)
+    router.push(`/confirmado?tokens=${tokens.join(',')}&fecha=${fecha}&hora=${horaSeleccionada}&simus=${recursosAUsar.join(',')}`)
   }
 
   async function notificarReserva(nombre: string, telefono: string, fecha: string, hora: string, recursos: number[], tokens: string[]) {
@@ -293,6 +305,12 @@ export default function ReservarPage() {
             <label className="block text-xs uppercase tracking-widest text-gray-500 mb-3">Horario</label>
             <div className="grid grid-cols-4 gap-2">
               {HORARIOS.map((hora) => {
+                if (negocio.features?.asignacionAutomatica) {
+                  const disp = disponiblesEnHora(hora)
+                  const pasado = !horaValida(hora, fecha, UMBRAL, negocio.anticipacionMinHs)
+                  const bloqueado = horaBloqueada(hora)
+                  if (disp === 0 || pasado || bloqueado) return null
+                }
                 const disp = disponiblesEnHora(hora)
                 const pasado = !horaValida(hora, fecha, UMBRAL, negocio.anticipacionMinHs)
                 const bloqueado = horaBloqueada(hora)
@@ -320,7 +338,7 @@ export default function ReservarPage() {
         )}
 
         {/* Recursos */}
-        {horaSeleccionada && (
+        {horaSeleccionada && !negocio.features?.asignacionAutomatica && (
           <div className="mb-8">
             <div className="flex items-center justify-between mb-3">
               <label className="block text-xs uppercase tracking-widest text-gray-500">
@@ -362,7 +380,7 @@ export default function ReservarPage() {
         )}
 
         {/* Datos */}
-        {recursosSeleccionados.length > 0 && (
+        {horaSeleccionada && (recursosSeleccionados.length > 0 || negocio.features?.asignacionAutomatica) && (
           <div className="mb-8 border border-white/10 rounded-xl p-6">
             <p className="text-xs uppercase tracking-widest text-gray-500 mb-4">Tus datos</p>
             <div className="mb-4">
@@ -377,7 +395,7 @@ export default function ReservarPage() {
         )}
 
         {/* Verificación Google */}
-        {nombre && telefono && recursosSeleccionados.length > 0 && (
+        {nombre && telefono && (recursosSeleccionados.length > 0 || negocio.features?.asignacionAutomatica) && (
           <div className="mb-8 border border-white/10 rounded-xl p-6">
             <p className="text-xs uppercase tracking-widest text-gray-500 mb-4">Verificación de identidad</p>
             {emailVerificado ? (
@@ -403,7 +421,7 @@ export default function ReservarPage() {
         )}
 
         {/* Confirmar */}
-        {nombre && telefono && recursosSeleccionados.length > 0 && !!emailVerificado && (
+        {nombre && telefono && (recursosSeleccionados.length > 0 || negocio.features?.asignacionAutomatica) && !!emailVerificado && (
           <button
             onClick={confirmarReserva}
             disabled={cargando}
@@ -411,7 +429,9 @@ export default function ReservarPage() {
           >
             {cargando
               ? 'Guardando...'
-              : `Confirmar · ${horaSeleccionada} · ${recursosSeleccionados.length === 1 ? negocio.recursoNombre + ' ' + recursosSeleccionados[0] : recursosSeleccionados.length + ' ' + negocio.recursoNombrePlural.toLowerCase()}`}
+              : negocio.features?.asignacionAutomatica
+                ? `Confirmar · ${horaSeleccionada}`
+                : `Confirmar · ${horaSeleccionada} · ${recursosSeleccionados.length === 1 ? negocio.recursoNombre + ' ' + recursosSeleccionados[0] : recursosSeleccionados.length + ' ' + negocio.recursoNombrePlural.toLowerCase()}`}
           </button>
         )}
       </div>

@@ -31,6 +31,7 @@ export type NegocioConfig = {
     recordatorio24hs?: boolean
     confirmacionCliente?: boolean
     limiteReservasPorIP?: number
+    asignacionAutomatica?: boolean
   }
   anticipacionMinHs?: number    // bloquea slots con menos de N horas de anticipación
   cancelacionMinHs?: number     // horas mínimas de anticipación para cancelar sin contactar al local
