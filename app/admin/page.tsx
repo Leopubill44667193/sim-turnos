@@ -205,7 +205,7 @@ export default function Admin() {
         clienteId = nuevo.id
       }
     } else {
-      const { data: nuevo } = await supabase.from('clientes').insert({ nombre, negocio_id: negocio.id }).select('id').single()
+      const { data: nuevo } = await supabase.from('clientes').insert({ nombre, telefono: null, negocio_id: negocio.id }).select('id').single()
       if (!nuevo) return
       clienteId = nuevo.id
     }
