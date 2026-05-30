@@ -13,6 +13,11 @@ type Props = {
 
 export default function CalendarioInline({ value, onChange, diasHabiles }: Props) {
   const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
+  const maxFecha = (() => {
+    const d = new Date(hoy + 'T12:00:00')
+    d.setDate(d.getDate() + 7)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })()
   const [anioHoy, mesHoy] = hoy.split('-').map(Number) // mesHoy es 1-indexed
 
   const base = value ? new Date(value + 'T12:00:00') : new Date(hoy + 'T12:00:00')
@@ -20,6 +25,11 @@ export default function CalendarioInline({ value, onChange, diasHabiles }: Props
   const [mes, setMes] = useState(base.getMonth()) // 0-indexed
 
   const puedeAnterior = anio > anioHoy || (anio === anioHoy && mes > mesHoy - 1)
+  const puedeSiguiente = (() => {
+    const sigAnio = mes === 11 ? anio + 1 : anio
+    const sigMes  = mes === 11 ? 0 : mes + 1
+    return `${sigAnio}-${String(sigMes + 1).padStart(2, '0')}-01` <= maxFecha
+  })()
 
   function anteriorMes() {
     if (!puedeAnterior) return
@@ -28,6 +38,7 @@ export default function CalendarioInline({ value, onChange, diasHabiles }: Props
   }
 
   function siguienteMes() {
+    if (!puedeSiguiente) return
     if (mes === 11) { setMes(0); setAnio(a => a + 1) }
     else setMes(m => m + 1)
   }
@@ -46,6 +57,7 @@ export default function CalendarioInline({ value, onChange, diasHabiles }: Props
   function esDiaValido(dia: number) {
     const f = toFechaStr(dia)
     if (f < hoy) return false
+    if (f > maxFecha) return false
     if (!diasHabiles || diasHabiles.length === 0) return true
     return diasHabiles.includes(new Date(anio, mes, dia).getDay())
   }
@@ -65,7 +77,8 @@ export default function CalendarioInline({ value, onChange, diasHabiles }: Props
         </span>
         <button
           onClick={siguienteMes}
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition text-xl leading-none"
+          disabled={!puedeSiguiente}
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition disabled:opacity-20 disabled:cursor-not-allowed text-xl leading-none"
         >
           ›
         </button>

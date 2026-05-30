@@ -25,7 +25,7 @@ Sistema de reservas online configurable por negocio. Un solo repo, una sola base
 |----|---------|-----------|----------|---------|
 | `sim-turnos` | OC.Hobbies.Racing | Av. 3 de Febrero 283, Rojas | 4 simuladores, 60 min | 15:00-02:00 todos los días |
 | `prgrssv` | Prgrssv | Zeballos 2239 6A, Rosario | 1 peluquero, 30 min | 09:00-19:30 Lun-Vie |
-| `lacancha` | La Cancha Padel | Av. 20 de Diciembre 180, Rojas | 4 canchas, intervalo 30 min, turno 90 min | 09:00-22:30 todos los días |
+| `lacancha` | La Cancha Padel | Av. 20 de Diciembre 180, Rojas | 4 canchas, intervalo 30 min, turno 90 min, asignacionAutomatica | 09:00-22:30 todos los días |
 | `demo-padel` | Club Demo Pádel | Av. Siempreviva 742, Rosario | 4 canchas, 90 min | 09:00-00:00 todos los días |
 
 ## Dominios
@@ -143,12 +143,14 @@ No hay tests configurados y no se deben agregar salvo que se pida explícitament
     recordatorio24hs?: boolean    // recordatorio 24hs antes (no implementado)
     confirmacionCliente?: boolean // confirmación al cliente por WhatsApp (no implementado)
     limiteReservasPorIP?: number  // número máximo de reservas permitidas por IP en una ventana de 24 horas. Si está undefined, no se aplica límite.
+    asignacionAutomatica?: boolean  // true = el sistema asigna automáticamente el primer recurso libre, el cliente no elige. La grilla oculta slots sin disponibilidad. Confirmado y WhatsApp muestran solo el nombre del recurso sin número.
   }
   anticipacionMinHs?: number      // bloquea slots con menos de N horas de anticipación desde ahora (aplica en días futuros también). undefined = sin restricción
   cancelacionMinHs?: number       // horas mínimas de anticipación para cancelar sin contactar al local. Se muestra en /cancelar/[token]. lacancha: 6
   whatsappNegocio?: string        // número WhatsApp del local sin + ni espacios, ej: "5492474470920". Se usa en el botón de contacto de /confirmado. lacancha: '5492474661495'
   fontTitle?: string              // fuente para títulos, cargada desde Google Fonts vía next/font. Ej: 'Bebas Neue'
   bgTexture?: 'grid'              // textura de fondo sutil. 'grid' = grilla verde semitransparente
+  telefonoPlaceholder?: string    // placeholder del input de teléfono en el flujo de reserva. Ej: '2474 123456'. Default: '11 1234-5678'
 }
 ```
 
@@ -297,7 +299,7 @@ RLS deshabilitado.
 | `/cancelar/[token]` | Cancelación self-service, sin login |
 | `/cancelar` | Redirige a /mis-turnos |
 | `/mis-turnos` | Buscar turnos propios por teléfono |
-| `/admin` | Panel con cuatro pestañas: Resumen / Próximos / Todos / Por día. Resumen muestra métricas de hoy, semana y mes. Por día incluye grilla + tabla + bloqueos. En la grilla: click en celda libre → abre input de motivo; sin motivo → bloqueo genérico ámbar (`slots_bloqueados`); con motivo → bloqueo azul con nombre, slots +30/+60 muestran `↳ [motivo]`; click en label de hora → bloquea/desbloquea todos los slots libres de esa fila a la vez. Flechas ‹ › junto al selector de fecha para navegar días sin abrir el calendario. |
+| `/admin` | Panel con cuatro pestañas: Resumen / Próximos / Todos / Por día. **Resumen:** métricas de hoy, semana y mes — combina `turnos` + `slots_bloqueados` con motivo no vacío (los slots con nombre representan reservas del dueño). Query trae desde inicioMes(-1) hasta finMes(0). **Próximos:** combina turnos reales y slots con motivo, ordenados por fecha+hora; slots sin botón Eliminar. **Por día:** grilla + tabla + bloqueos. En la grilla: click en slot libre ofrece: (1) cargar turno manual — nombre obligatorio, teléfono opcional, se inserta en `turnos` como turno real; (2) bloquear slot — bloquea solo ese slot sin ocupar los siguientes; con motivo → bloqueo azul con nombre, slots +30/+60 muestran `↳ [motivo]`; click en label de hora → bloquea/desbloquea todos los slots libres de esa fila. Flechas ‹ › para navegar días. |
 | `/api/notificar` | POST server-side → Twilio Content Templates: admin (TO_1/TO_2) + cliente |
 | `/api/validar-reserva` | POST server-side → valida nombre/teléfono y límite por IP antes del insert |
 | `/api/admin/bloquear-slot` | POST/DELETE server-side → bloquea o desbloquea un slot individual (recurso + fecha + hora) en `slots_bloqueados`. Requiere cookie `admin_session`. |
@@ -362,7 +364,7 @@ Antes de insertar un turno se busca si ya existe un cliente con ese teléfono y 
 `lib/supabase.js` usa fallback `|| placeholder` en las vars para evitar crash durante el prerender de Next.js en Vercel.
 
 ### Timezone
-`created_at` en el admin resta 3 hs hardcodeado (UTC-3). No hay manejo explícito de timezone.
+`created_at` en el admin resta 3 hs hardcodeado (UTC-3). Las funciones de fecha del admin (`hoy()`, `inicioMes()`, `finMes()`) usan `toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' })` para obtener la fecha argentina correcta sin depender de la timezone del sistema.
 
 ---
 
@@ -433,6 +435,7 @@ ADMIN_PASSWORD=...
 - **`bgImage` configurable desde `NegocioConfig`** — prgrssv ya tiene imagen de fondo hardcodeada en `app/confirmado/page.tsx` (condicional por `negocio.id`), pendiente hacerla configurable desde config y extender a más páginas.
 - **Límite de reservas por cliente** — campo `limites` en `NegocioConfig` con `maxTurnosActivos`, `maxRecursosMismaHora`, `maxTurnosPorDia`. Lógica por negocio: sim-turnos permite multi-recurso misma hora, lacancha no. (Distinto del límite por IP ya implementado.)
 - **Recordatorio 1hs antes por WhatsApp** — requiere cron job, no puede dispararse desde el flujo de reserva.
+- ~~**Turno manual desde admin**~~ — implementado el 2026-05-27. Desde la grilla Por día, click en slot libre permite cargar turno manual (nombre + teléfono opcional) que se guarda en `turnos` como turno real, o bloquear ese slot específico sin afectar slots siguientes.
 
 ## Auth / Verificación de identidad
 
@@ -526,6 +529,8 @@ Implementado el 2026-05-03. Activo en los tres negocios.
 - ~~**Constraint UNIQUE en turnos sin negocio_id**~~ — resuelto el 2026-04-30. Ver nota en sección `turnos` del esquema de BD.
 - ~~**Lógica dentroDeVentana invertida en /cancelar/[token]**~~ — resuelto el 2026-05-19. La condición mostraba "contactar al local" cuando el turno ya había pasado en lugar de cuando se acercaba.
 - ~~**Query a turnos sin negocio_id en /cancelar/[token]**~~ — resuelto el 2026-05-19. Faltaba `.eq('negocio_id', negocio.id)` en la query de carga del turno.
+- ~~**Resumen admin mostraba 0 turnos**~~ — resuelto el 2026-05-26. Dos causas: (1) `hoy()` usaba UTC → después de las 21:00 ARG devolvía fecha incorrecta; (2) el Resumen solo consultaba `turnos` pero en lacancha los turnos se cargan como `slots_bloqueados` con motivo. Solución: timezone correcta en `hoy()`/`inicioMes()`/`finMes()`, y `fetchResumen` ahora combina ambas tablas.
+- **Autocapitalización de nombre en reserva** — el input de nombre en `/reservar` autocapitaliza la primera letra de cada palabra al tipear. Implementado con `.replace(/(?:^|\s)\S/g, c => c.toUpperCase())` en el `onChange`.
 
 ---
 
