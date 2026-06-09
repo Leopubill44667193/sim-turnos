@@ -32,6 +32,7 @@ export type NegocioConfig = {
     confirmacionCliente?: boolean
     limiteReservasPorIP?: number
     asignacionAutomatica?: boolean
+    slotsPublicados?: boolean
   }
   telefonoPlaceholder?: string
   anticipacionMinHs?: number    // bloquea slots con menos de N horas de anticipación
@@ -42,10 +43,12 @@ export type NegocioConfig = {
 }
 
 /** Genera el array de horarios a partir del rango del negocio.
- *  ej: inicioMin=540, finMin=1170, intervalo=30 → ['09:00', '09:30', ..., '19:00'] */
-export function generarHorarios(inicioMin: number, finMin: number, intervaloMinutos: number): string[] {
+ *  ej: inicioMin=540, finMin=1170, intervalo=30 → ['09:00', '09:30', ..., '19:00']
+ *  Si se pasa duracionMinutos, excluye slots cuya duración completa supere finMin. */
+export function generarHorarios(inicioMin: number, finMin: number, intervaloMinutos: number, duracionMinutos?: number): string[] {
+  const dur = duracionMinutos ?? intervaloMinutos
   const horarios: string[] = []
-  for (let m = inicioMin; m < finMin; m += intervaloMinutos) {
+  for (let m = inicioMin; m + dur <= finMin; m += intervaloMinutos) {
     horarios.push(formatHora(m))
   }
   return horarios

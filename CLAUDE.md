@@ -178,7 +178,7 @@ Sin esto los datos se mezclan entre negocios.
 | id | uuid PK | |
 | negocio_id | text | aísla por negocio |
 | nombre | text | |
-| telefono | text | único por negocio |
+| telefono | text nullable | único por negocio. NULL permitido (DROP NOT NULL ejecutado 2026-05-30) — varios clientes pueden tener telefono NULL coexistiendo en la UNIQUE |
 
 **Constraint:** `UNIQUE (negocio_id, telefono)`
 
@@ -249,6 +249,35 @@ CREATE INDEX idx_reservas_por_ip_negocio_ip_created
 
 RLS deshabilitado (misma anon key para todos).
 
+### `slots_publicados`
+| campo | tipo | notas |
+|-------|------|-------|
+| id | uuid PK | default gen_random_uuid() |
+| negocio_id | text NOT NULL | |
+| recurso_id | int NOT NULL | |
+| fecha | date NOT NULL | |
+| hora | time NOT NULL | |
+| created_at | timestamptz NOT NULL | default now() |
+
+**Índice único:** `(negocio_id, recurso_id, fecha, hora)`
+
+Usada por `features.slotsPublicados` (actualmente solo `lacancha`). El admin publica slots desde la grilla Por día (botón "Publicar" en el form de slot libre). El cliente solo ve los slots publicados y libres. Al confirmar una reserva, el slot correspondiente se elimina automáticamente de esta tabla.
+
+```sql
+CREATE TABLE slots_publicados (
+  id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  negocio_id text        NOT NULL,
+  recurso_id int         NOT NULL,
+  fecha      date        NOT NULL,
+  hora       time        NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX idx_slots_publicados_unique
+  ON slots_publicados (negocio_id, recurso_id, fecha, hora);
+```
+
+RLS deshabilitado.
+
 ### `slots_bloqueados`
 | campo | tipo | notas |
 |-------|------|-------|
@@ -303,6 +332,7 @@ RLS deshabilitado.
 | `/api/notificar` | POST server-side → Twilio Content Templates: admin (TO_1/TO_2) + cliente |
 | `/api/validar-reserva` | POST server-side → valida nombre/teléfono y límite por IP antes del insert |
 | `/api/admin/bloquear-slot` | POST/DELETE server-side → bloquea o desbloquea un slot individual (recurso + fecha + hora) en `slots_bloqueados`. Requiere cookie `admin_session`. |
+| `/api/admin/publicar-slot` | POST/DELETE server-side → publica o despublica un slot individual en `slots_publicados`. Solo para negocios con `features.slotsPublicados`. Requiere cookie `admin_session`. |
 
 ---
 
@@ -436,6 +466,7 @@ ADMIN_PASSWORD=...
 - **Límite de reservas por cliente** — campo `limites` en `NegocioConfig` con `maxTurnosActivos`, `maxRecursosMismaHora`, `maxTurnosPorDia`. Lógica por negocio: sim-turnos permite multi-recurso misma hora, lacancha no. (Distinto del límite por IP ya implementado.)
 - **Recordatorio 1hs antes por WhatsApp** — requiere cron job, no puede dispararse desde el flujo de reserva.
 - ~~**Turno manual desde admin**~~ — implementado el 2026-05-27. Desde la grilla Por día, click en slot libre permite cargar turno manual (nombre + teléfono opcional) que se guarda en `turnos` como turno real, o bloquear ese slot específico sin afectar slots siguientes.
+- ~~**Sistema de slots publicados**~~ — implementado el 2026-06-09. Solo `lacancha` (`features.slotsPublicados: true`). Admin publica slots desde la grilla (botón "Publicar" en el form de slot libre); se muestran en cian. Cliente solo ve slots publicados y libres. Al confirmar, el slot se auto-elimina de `slots_publicados`. Tabla nueva: `slots_publicados`. Route nueva: `/api/admin/publicar-slot`.
 
 ## Auth / Verificación de identidad
 

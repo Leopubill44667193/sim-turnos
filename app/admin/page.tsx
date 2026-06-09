@@ -74,6 +74,7 @@ export default function Admin() {
   const [loadingResumen, setLoadingResumen] = useState(false)
   const [slotsBloqueados, setSlotsBloqueados] = useState<Record<string, string | null>>({})
   const [procesandoHora, setProcesandoHora] = useState<Set<string>>(new Set())
+  const [slotsPublicadosMap, setSlotsPublicadosMap] = useState<Record<string, true>>({})
 
   const fetchResumen = async () => {
     setLoadingResumen(true)
@@ -91,7 +92,6 @@ export default function Admin() {
         .gte('fecha', inicioMes(-1))
         .lte('fecha', finMes(0)),
     ])
-    console.log('fetchResumen query resultado:', { data, error, slotsData, inicioMes: inicioMes(-1), finMes: finMes(0) })
     if (!error && data) setResumenTurnos(data as unknown as Turno[])
     if (slotsData) setResumenSlots(slotsData)
     setLoadingResumen(false)
@@ -102,8 +102,8 @@ export default function Admin() {
       fetchResumen()
     } else {
       fetchTurnos()
-      if (modo === 'dia') { fetchBloqueo(); fetchHorariosBloqueados(); fetchSlotsBloqueados() }
-      else { setDiaBloqueado(null); setHorariosBloqueados({}); setSlotsBloqueados({}) }
+      if (modo === 'dia') { fetchBloqueo(); fetchHorariosBloqueados(); fetchSlotsBloqueados(); fetchSlotsPublicados() }
+      else { setDiaBloqueado(null); setHorariosBloqueados({}); setSlotsBloqueados({}); setSlotsPublicadosMap({}) }
     }
   }, [modo, fecha])
 
@@ -151,6 +151,14 @@ export default function Admin() {
     setSlotsBloqueados(map)
   }
 
+  const fetchSlotsPublicados = async () => {
+    if (!negocio.features?.slotsPublicados) return
+    const { data } = await supabase.from('slots_publicados').select('recurso_id, hora').eq('fecha', fecha).eq('negocio_id', negocio.id)
+    const map: Record<string, true> = {}
+    for (const d of data ?? []) map[`${d.recurso_id}_${d.hora.slice(0, 5)}`] = true
+    setSlotsPublicadosMap(map)
+  }
+
   const toggleHorario = async (hora: string) => {
     await supabase.from('horarios_bloqueados').delete().eq('fecha', fecha).eq('hora', hora).eq('negocio_id', negocio.id)
     setHorariosBloqueados((prev) => { const r = { ...prev }; delete r[hora]; return r })
@@ -173,7 +181,7 @@ export default function Admin() {
     const nuevosSlots = { ...slotsBloqueados }
     const ops: Promise<void>[] = []
     for (const r of RECURSOS) {
-      if (grillaMap[hora]?.[r.id] || continuacionMap[hora]?.has(r.id) || hora in horariosBloqueados || slotsBloqContinuacionMap[hora]?.[r.id]) continue
+      if (grillaMap[hora]?.[r.id] || continuacionMap[hora]?.has(r.id) || hora in horariosBloqueados || slotsBloqContinuacionMap[hora]?.[r.id] || slotsPublicadosMap[`${r.id}_${hora}`]) continue
       const key = `${r.id}_${hora}`
       const bloqueado = key in nuevosSlots
       ops.push(
@@ -210,7 +218,30 @@ export default function Admin() {
       clienteId = nuevo.id
     }
     await supabase.from('turnos').insert({ negocio_id: negocio.id, simulador_id: recursoId, cliente_id: clienteId, fecha, hora_inicio: hora, hora_fin: horaFin })
+    if (negocio.features?.slotsPublicados) {
+      const { data: pubs } = await supabase
+        .from('slots_publicados')
+        .select('recurso_id, hora')
+        .eq('negocio_id', negocio.id)
+        .eq('fecha', fecha)
+        .eq('recurso_id', recursoId)
+      const horaMin = toMin(hora)
+      const coveringPubs = (pubs ?? []).filter(p => {
+        const pubMin = toMin(p.hora.substring(0, 5))
+        return horaMin < pubMin + negocio.duracionMinutos && pubMin < horaMin + negocio.duracionMinutos
+      })
+      if (coveringPubs.length > 0) {
+        await supabase
+          .from('slots_publicados')
+          .delete()
+          .eq('negocio_id', negocio.id)
+          .eq('recurso_id', recursoId)
+          .eq('fecha', fecha)
+          .in('hora', coveringPubs.map(p => p.hora))
+      }
+    }
     await fetchTurnos()
+    await fetchSlotsPublicados()
     setSlotActivo(null); setSlotNombre(''); setSlotTelefono('')
   }
 
@@ -236,6 +267,25 @@ export default function Admin() {
       body: JSON.stringify({ negocio_id: negocio.id, recurso_id: recursoId, fecha, hora }),
     })
     setSlotsBloqueados((prev) => { const r = { ...prev }; delete r[`${recursoId}_${hora}`]; return r })
+  }
+
+  const publicarSlot = async (hora: string, recursoId: number) => {
+    await fetch('/api/admin/publicar-slot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ negocio_id: negocio.id, recurso_id: recursoId, fecha, hora }),
+    })
+    setSlotsPublicadosMap((prev) => ({ ...prev, [`${recursoId}_${hora}`]: true }))
+    setSlotActivo(null); setSlotNombre(''); setSlotTelefono('')
+  }
+
+  const despublicarSlot = async (hora: string, recursoId: number) => {
+    await fetch('/api/admin/publicar-slot', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ negocio_id: negocio.id, recurso_id: recursoId, fecha, hora }),
+    })
+    setSlotsPublicadosMap((prev) => { const r = { ...prev }; delete r[`${recursoId}_${hora}`]; return r })
   }
 
   const fetchBloqueo = async () => {
@@ -279,7 +329,6 @@ export default function Admin() {
   // ── Métricas resumen ──────────────────────────────────────────────────
   const todayStr = hoy()
   const slotsConMotivo = resumenSlots.filter(s => s.motivo && s.motivo.trim() !== '')
-  console.log('todayStr:', todayStr, 'fechas:', resumenTurnos.map(t => t.fecha))
 
   const turnosHoy = resumenTurnos.filter(t => t.fecha === todayStr)
   const slotsHoy = slotsConMotivo.filter(s => s.fecha === todayStr)
@@ -381,6 +430,19 @@ export default function Admin() {
       const hCont = formatHora(horaMin + delta)
       if (!slotsBloqContinuacionMap[hCont]) slotsBloqContinuacionMap[hCont] = {}
       slotsBloqContinuacionMap[hCont][recursoId] = motivo
+    }
+  }
+
+  const slotsPublicadosContinuacionMap: Record<string, Set<number>> = {}
+  for (const key of Object.keys(slotsPublicadosMap)) {
+    const idx = key.indexOf('_')
+    const recursoId = Number(key.slice(0, idx))
+    const hora = key.slice(idx + 1)
+    const horaMin = toMin(hora)
+    for (const delta of [30, 60]) {
+      const hCont = formatHora(horaMin + delta)
+      if (!slotsPublicadosContinuacionMap[hCont]) slotsPublicadosContinuacionMap[hCont] = new Set()
+      slotsPublicadosContinuacionMap[hCont].add(recursoId)
     }
   }
 
@@ -642,6 +704,7 @@ export default function Admin() {
                       const turno = grillaMap[hora]?.[r.id]
                       const esContinuacion = !turno && (continuacionMap[hora]?.has(r.id) ?? false)
                       const motivoContinuacion = !turno && !esContinuacion ? (slotsBloqContinuacionMap[hora]?.[r.id] ?? null) : null
+                      const esContinuacionPublicada = !turno && !esContinuacion && !motivoContinuacion && negocio.features?.slotsPublicados && (slotsPublicadosContinuacionMap[hora]?.has(r.id) ?? false)
                       return (
                         <td key={r.id} className="p-2">
                           {turno ? (
@@ -657,6 +720,8 @@ export default function Admin() {
                             <div className="rounded-lg p-2 text-center border border-white/5 text-gray-700 text-xs">↳ turno anterior</div>
                           ) : motivoContinuacion ? (
                             <div className="rounded-lg p-2 text-center border border-blue-400/10 text-blue-400/50 text-xs truncate">↳ {motivoContinuacion}</div>
+                          ) : esContinuacionPublicada ? (
+                            <div className="rounded-lg p-2 text-center border border-cyan-400/10 text-cyan-400/50 text-xs">↳ publicado</div>
                           ) : diaBloqueado ? (
                             <div className="rounded-lg p-2 text-center border border-yellow-500/10 text-yellow-900 text-xs">bloq.</div>
                           ) : hora in horariosBloqueados ? (
@@ -671,6 +736,10 @@ export default function Admin() {
                               : <button onClick={() => toggleSlot(hora, r.id)} className="w-full rounded-lg p-2 text-center border border-amber-500/30 bg-amber-500/10 text-amber-600 text-xs hover:border-amber-500/50 transition">
                                   bloqueado ✕
                                 </button>
+                          ) : negocio.features?.slotsPublicados && slotsPublicadosMap[`${r.id}_${hora}`] && !(slotActivo?.hora === hora && slotActivo?.recursoId === r.id) ? (
+                            <button onClick={() => setSlotActivo({ hora, recursoId: r.id })} className="w-full rounded-lg p-2 text-center border border-cyan-400/30 bg-cyan-400/10 text-cyan-400 text-xs hover:border-cyan-400/50 transition">
+                              publicado
+                            </button>
                           ) : slotActivo?.hora === hora && slotActivo?.recursoId === r.id ? (
                             <div className="rounded-lg p-1.5 border border-white/15 text-xs flex flex-col gap-1">
                               <input
@@ -698,11 +767,26 @@ export default function Admin() {
                                 >Turno ✓</button>
                                 <button
                                   onClick={async () => {
+                                    if (negocio.features?.slotsPublicados && slotsPublicadosMap[`${r.id}_${hora}`]) {
+                                      await despublicarSlot(hora, r.id)
+                                    }
                                     await toggleSlot(hora, r.id)
                                     setSlotActivo(null); setSlotNombre(''); setSlotTelefono('')
                                   }}
                                   className="text-amber-500 hover:text-amber-400 transition text-xs px-2 py-1 rounded border border-amber-500/40 hover:bg-amber-500/10"
                                 >Bloquear</button>
+                                {negocio.features?.slotsPublicados && !slotsPublicadosMap[`${r.id}_${hora}`] && (
+                                  <button
+                                    onClick={() => publicarSlot(hora, r.id)}
+                                    className="text-cyan-500 hover:text-cyan-400 transition text-xs px-2 py-1 rounded border border-cyan-500/40 hover:bg-cyan-500/10"
+                                  >Publicar</button>
+                                )}
+                                {negocio.features?.slotsPublicados && slotsPublicadosMap[`${r.id}_${hora}`] && (
+                                  <button
+                                    onClick={async () => { await despublicarSlot(hora, r.id); setSlotActivo(null); setSlotNombre(''); setSlotTelefono('') }}
+                                    className="text-cyan-500 hover:text-cyan-400 transition text-xs px-2 py-1 rounded border border-cyan-500/40 hover:bg-cyan-500/10"
+                                  >Despublicar</button>
+                                )}
                                 <button
                                   onClick={() => { setSlotActivo(null); setSlotNombre(''); setSlotTelefono('') }}
                                   className="text-gray-600 hover:text-gray-400 transition text-xs px-2 py-1 rounded border border-white/10 hover:bg-white/5"

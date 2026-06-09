@@ -7,7 +7,7 @@ const config: NegocioConfig = {
   direccion: 'Av. 20 de Diciembre 180 · Rojas',
   horario: {
     inicioMin: 9 * 60,
-    finMin: 22 * 60 + 30 + 30,  // último slot arranca a 22:30; con intervalo 30 → finMin = 22:30 + 30 = 23:00
+    finMin: 24 * 60,
     intervaloMinutos: 30,
   },
   recursos: [
@@ -23,7 +23,7 @@ const config: NegocioConfig = {
   emoji: '🎾',
   seleccionSimple: true,
   tema: { accent: '#22c55e', accentHover: '#16a34a', bg: '#0c1a10' },
-  features: { multiRecurso: true, limiteReservasPorIP: 2, asignacionAutomatica: true },
+  features: { multiRecurso: true, limiteReservasPorIP: 2, asignacionAutomatica: true, slotsPublicados: true },
   telefonoPlaceholder: '2474 123456',
   cancelacionMinHs: 6,
   whatsappNegocio: '5492474661495',

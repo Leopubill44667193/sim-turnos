@@ -7,7 +7,7 @@ import { negocio } from '@/config'
 import { generarHorarios, calcularUmbral, horaValida, esDiaHabil, toMin } from '@/lib/config'
 import CalendarioInline from '@/components/CalendarioInline'
 
-const HORARIOS = generarHorarios(negocio.horario.inicioMin, negocio.horario.finMin, negocio.horario.intervaloMinutos)
+const HORARIOS = generarHorarios(negocio.horario.inicioMin, negocio.horario.finMin, negocio.horario.intervaloMinutos, negocio.duracionMinutos)
 const UMBRAL = calcularUmbral(negocio.horario.finMin)
 
 export default function ReservarIdPage({ params }: { params: Promise<{ id: string }> }) {
@@ -137,9 +137,9 @@ export default function ReservarIdPage({ params }: { params: Promise<{ id: strin
     const s = toMin(hora)
     const d = negocio.duracionMinutos
     return (
-      turnosHoras.some(t => { const tm = toMin(t); return s >= tm && s < tm + d }) ||
-      slotsBloqList.some(b => { const bm = toMin(b.hora); const bd = b.motivo ? d : negocio.horario.intervaloMinutos; return s >= bm && s < bm + bd }) ||
-      horariosBloqueados.some(b => { const bm = toMin(b); return s >= bm && s < bm + d })
+      turnosHoras.some(t => { const tm = toMin(t); return s < tm + d && tm < s + d }) ||
+      slotsBloqList.some(b => { const bm = toMin(b.hora); const bd = b.motivo ? d : negocio.horario.intervaloMinutos; return s < bm + bd && bm < s + d }) ||
+      horariosBloqueados.some(b => { const bm = toMin(b); return s < bm + d && bm < s + d })
     )
   }
 

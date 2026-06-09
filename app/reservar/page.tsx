@@ -7,7 +7,7 @@ import { negocio } from '@/config'
 import { generarHorarios, calcularUmbral, horaValida, esDiaHabil, toMin } from '@/lib/config'
 import CalendarioInline from '@/components/CalendarioInline'
 
-const HORARIOS = generarHorarios(negocio.horario.inicioMin, negocio.horario.finMin, negocio.horario.intervaloMinutos)
+const HORARIOS = generarHorarios(negocio.horario.inicioMin, negocio.horario.finMin, negocio.horario.intervaloMinutos, negocio.duracionMinutos)
 const RECURSOS = negocio.recursos
 const UMBRAL = calcularUmbral(negocio.horario.finMin)
 
@@ -33,6 +33,7 @@ export default function ReservarPage() {
   const [diaNoHabil, setDiaNoHabil] = useState(false)
   const [horariosBloqueados, setHorariosBloqueados] = useState<string[]>([])
   const [emailVerificado, setEmailVerificado] = useState<string | null>(null)
+  const [slotsPublicados, setSlotsPublicados] = useState<Array<{ recurso_id: number; hora: string }>>([])
   const draftRef = useRef<{ hora: string; recursos: number[] } | null>(null)
 
   useEffect(() => {
@@ -44,11 +45,12 @@ export default function ReservarPage() {
         return
       }
       setDiaNoHabil(false)
-      const [{ data: turnosData, error: errorFetch }, { data: bloqueo }, { data: horBloq }, { data: slotsBloq }] = await Promise.all([
+      const [{ data: turnosData, error: errorFetch }, { data: bloqueo }, { data: horBloq }, { data: slotsBloq }, { data: pubData }] = await Promise.all([
         supabase.from('turnos').select('hora_inicio, simulador_id').eq('fecha', fecha).eq('negocio_id', negocio.id),
         supabase.from('dias_bloqueados').select('fecha').eq('fecha', fecha).eq('negocio_id', negocio.id).single(),
         supabase.from('horarios_bloqueados').select('hora').eq('fecha', fecha).eq('negocio_id', negocio.id),
         supabase.from('slots_bloqueados').select('recurso_id, hora, motivo').eq('fecha', fecha).eq('negocio_id', negocio.id),
+        supabase.from('slots_publicados').select('recurso_id, hora').eq('fecha', fecha).eq('negocio_id', negocio.id),
       ])
       if (errorFetch) {
         alert('Error al cargar disponibilidad. Recargá la página e intentá de nuevo.\n' + errorFetch.message)
@@ -64,6 +66,9 @@ export default function ReservarPage() {
       }
       setTurnosPorHora(mapa)
       setSlotsBloqList((slotsBloq ?? []).map((s) => ({ recurso_id: s.recurso_id, hora: s.hora.slice(0, 5), motivo: s.motivo ?? null })))
+      const pubNorm = (pubData ?? []).map((p: { recurso_id: number; hora: string }) => ({ recurso_id: p.recurso_id, hora: p.hora.substring(0, 5) }))
+      console.log('slots_publicados raw:', JSON.stringify(pubData), 'norm:', JSON.stringify(pubNorm))
+      setSlotsPublicados(pubNorm)
       if (draftRef.current) {
         const { hora, recursos } = draftRef.current
         draftRef.current = null
@@ -115,10 +120,20 @@ export default function ReservarPage() {
     return [...result]
   }
 
+
   function horaBloqueada(hora: string): boolean {
     const s = toMin(hora)
     const d = negocio.duracionMinutos
-    return horariosBloqueados.some(b => { const bm = toMin(b); return s >= bm && s < bm + d })
+    return horariosBloqueados.some(b => { const bm = toMin(b); return s < bm + d && bm < s + d })
+  }
+
+  function recursosReservables(hora: string): number[] {
+    const result = RECURSOS.filter(r =>
+      slotsPublicados.some(p => Number(p.recurso_id) === r.id && p.hora.substring(0, 5) === hora) &&
+      !recursosOcupados(hora).includes(r.id)
+    ).map(r => r.id)
+    if (result.length > 0) console.log('recursosReservables', hora, '→', result, 'slotsPublicados:', JSON.stringify(slotsPublicados))
+    return result
   }
 
   function seleccionarHora(hora: string) {
@@ -156,8 +171,10 @@ export default function ReservarPage() {
 
     let recursosAUsar = recursosSeleccionados
     if (negocio.features?.asignacionAutomatica) {
-      const ocupados = recursosOcupados(horaSeleccionada)
-      const libre = RECURSOS.find(r => !ocupados.includes(r.id))
+      const candidatos = negocio.features?.slotsPublicados
+        ? recursosReservables(horaSeleccionada)
+        : RECURSOS.filter(r => !recursosOcupados(horaSeleccionada).includes(r.id)).map(r => r.id)
+      const libre = RECURSOS.find(r => candidatos.includes(r.id))
       if (!libre) {
         alert('No hay canchas disponibles para ese horario.')
         setCargando(false)
@@ -226,6 +243,13 @@ export default function ReservarPage() {
         return
       }
       tokens.push(turnoCreado.cancel_token)
+    }
+
+    if (negocio.features?.slotsPublicados) {
+      await Promise.all(recursosAUsar.map(simId =>
+        supabase.from('slots_publicados').delete()
+          .eq('negocio_id', negocio.id).eq('recurso_id', simId).eq('fecha', fecha).eq('hora', horaSeleccionada + ':00')
+      ))
     }
 
     await notificarReserva(nombre, telefono, fecha, horaSeleccionada, recursosAUsar, tokens)
@@ -307,16 +331,13 @@ export default function ReservarPage() {
             <label className="block text-xs uppercase tracking-widest text-gray-500 mb-3">Horario</label>
             <div className="grid grid-cols-4 gap-2">
               {HORARIOS.map((hora) => {
-                if (negocio.features?.asignacionAutomatica) {
-                  const disp = disponiblesEnHora(hora)
-                  const pasado = !horaValida(hora, fecha, UMBRAL, negocio.anticipacionMinHs)
-                  const bloqueado = horaBloqueada(hora)
-                  if (disp === 0 || pasado || bloqueado) return null
-                }
-                const disp = disponiblesEnHora(hora)
+                const disp = negocio.features?.slotsPublicados
+                  ? recursosReservables(hora).length
+                  : disponiblesEnHora(hora)
                 const pasado = !horaValida(hora, fecha, UMBRAL, negocio.anticipacionMinHs)
                 const bloqueado = horaBloqueada(hora)
                 const lleno = disp === 0 || pasado || bloqueado
+                if (lleno) return null
                 const seleccionado = horaSeleccionada === hora
                 return (
                   <button
