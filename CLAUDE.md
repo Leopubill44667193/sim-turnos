@@ -144,6 +144,7 @@ No hay tests configurados y no se deben agregar salvo que se pida explícitament
     confirmacionCliente?: boolean // confirmación al cliente por WhatsApp (no implementado)
     limiteReservasPorIP?: number  // número máximo de reservas permitidas por IP en una ventana de 24 horas. Si está undefined, no se aplica límite.
     asignacionAutomatica?: boolean  // true = el sistema asigna automáticamente el primer recurso libre, el cliente no elige. La grilla oculta slots sin disponibilidad. Confirmado y WhatsApp muestran solo el nombre del recurso sin número.
+    slotsPublicados?: boolean       // true = el admin publica slots explícitamente; el cliente solo ve slots publicados y libres. Solo lacancha por ahora.
   }
   anticipacionMinHs?: number      // bloquea slots con menos de N horas de anticipación desde ahora (aplica en días futuros también). undefined = sin restricción
   cancelacionMinHs?: number       // horas mínimas de anticipación para cancelar sin contactar al local. Se muestra en /cancelar/[token]. lacancha: 6
@@ -261,7 +262,7 @@ RLS deshabilitado (misma anon key para todos).
 
 **Índice único:** `(negocio_id, recurso_id, fecha, hora)`
 
-Usada por `features.slotsPublicados` (actualmente solo `lacancha`). El admin publica slots desde la grilla Por día (botón "Publicar" en el form de slot libre). El cliente solo ve los slots publicados y libres. Al confirmar una reserva, el slot correspondiente se elimina automáticamente de esta tabla.
+Usada por `features.slotsPublicados` (actualmente solo `lacancha`). El admin publica slots desde la grilla Por día. El cliente solo ve slots publicados y libres (`recursosReservables` filtra por hora exacta). Al confirmar reserva o cargar turno manual sobre un slot publicado, se eliminan todos los `slots_publicados` que solapan con ese turno (overlap bidireccional: `horaMin < pubMin + duracion && pubMin < horaMin + duracion`). El POST de publicación limpia sub-slots del rango antes de insertar. Los sub-slots H+30 y H+60 son solo visuales en la grilla del admin (`↳ publicado`) y no se persisten en la BD.
 
 ```sql
 CREATE TABLE slots_publicados (
@@ -328,11 +329,11 @@ RLS deshabilitado.
 | `/cancelar/[token]` | Cancelación self-service, sin login |
 | `/cancelar` | Redirige a /mis-turnos |
 | `/mis-turnos` | Buscar turnos propios por teléfono |
-| `/admin` | Panel con cuatro pestañas: Resumen / Próximos / Todos / Por día. **Resumen:** métricas de hoy, semana y mes — combina `turnos` + `slots_bloqueados` con motivo no vacío (los slots con nombre representan reservas del dueño). Query trae desde inicioMes(-1) hasta finMes(0). **Próximos:** combina turnos reales y slots con motivo, ordenados por fecha+hora; slots sin botón Eliminar. **Por día:** grilla + tabla + bloqueos. En la grilla: click en slot libre ofrece: (1) cargar turno manual — nombre obligatorio, teléfono opcional, se inserta en `turnos` como turno real; (2) bloquear slot — bloquea solo ese slot sin ocupar los siguientes; con motivo → bloqueo azul con nombre, slots +30/+60 muestran `↳ [motivo]`; click en label de hora → bloquea/desbloquea todos los slots libres de esa fila. Flechas ‹ › para navegar días. |
+| `/admin` | Panel con cuatro pestañas: Resumen / Próximos / Todos / Por día. **Resumen:** métricas de hoy, semana y mes — combina `turnos` + `slots_bloqueados` con motivo no vacío (los slots con nombre representan reservas del dueño). Query trae desde inicioMes(-1) hasta finMes(0). **Próximos:** combina turnos reales y slots con motivo, ordenados por fecha+hora; slots sin botón Eliminar. **Por día:** grilla + tabla + bloqueos. En la grilla: click en slot libre abre form con opciones: (1) Turno ✓ — carga turno manual (nombre obligatorio, teléfono opcional), se inserta en `turnos`; si el slot está publicado también elimina todos los `slots_publicados` que solapan (fórmula de overlap bidireccional); (2) Bloquear — bloquea ese slot; si estaba publicado también lo despublica; (3) Publicar — solo negocios con `slotsPublicados`, solo si el slot no está publicado; (4) Despublicar — solo si el slot está publicado; (5) ✕ — cierra sin acción. Slot publicado (cian): click → abre el mismo form; sub-slots H+30 y H+60 de un publicado muestran `↳ publicado` en cian tenue y no son clickeables. Bloqueos con motivo: slots +30/+60 muestran `↳ [motivo]`. Click en label de hora → bloquea/desbloquea todos los slots libres de esa fila. Flechas ‹ › para navegar días. |
 | `/api/notificar` | POST server-side → Twilio Content Templates: admin (TO_1/TO_2) + cliente |
 | `/api/validar-reserva` | POST server-side → valida nombre/teléfono y límite por IP antes del insert |
 | `/api/admin/bloquear-slot` | POST/DELETE server-side → bloquea o desbloquea un slot individual (recurso + fecha + hora) en `slots_bloqueados`. Requiere cookie `admin_session`. |
-| `/api/admin/publicar-slot` | POST/DELETE server-side → publica o despublica un slot individual en `slots_publicados`. Solo para negocios con `features.slotsPublicados`. Requiere cookie `admin_session`. |
+| `/api/admin/publicar-slot` | POST/DELETE server-side → publica o despublica un slot individual en `slots_publicados`. Solo para negocios con `features.slotsPublicados`. Requiere cookie `admin_session`. El POST también borra sub-slots dentro del rango `[H+intervalo, H+duracion)` antes de insertar, para evitar stale data. |
 
 ---
 
@@ -466,7 +467,7 @@ ADMIN_PASSWORD=...
 - **Límite de reservas por cliente** — campo `limites` en `NegocioConfig` con `maxTurnosActivos`, `maxRecursosMismaHora`, `maxTurnosPorDia`. Lógica por negocio: sim-turnos permite multi-recurso misma hora, lacancha no. (Distinto del límite por IP ya implementado.)
 - **Recordatorio 1hs antes por WhatsApp** — requiere cron job, no puede dispararse desde el flujo de reserva.
 - ~~**Turno manual desde admin**~~ — implementado el 2026-05-27. Desde la grilla Por día, click en slot libre permite cargar turno manual (nombre + teléfono opcional) que se guarda en `turnos` como turno real, o bloquear ese slot específico sin afectar slots siguientes.
-- ~~**Sistema de slots publicados**~~ — implementado el 2026-06-09. Solo `lacancha` (`features.slotsPublicados: true`). Admin publica slots desde la grilla (botón "Publicar" en el form de slot libre); se muestran en cian. Cliente solo ve slots publicados y libres. Al confirmar, el slot se auto-elimina de `slots_publicados`. Tabla nueva: `slots_publicados`. Route nueva: `/api/admin/publicar-slot`.
+- ~~**Sistema de slots publicados**~~ — implementado el 2026-06-09, refinado 2026-06-09. Solo `lacancha` (`features.slotsPublicados: true`). Admin publica slots desde la grilla (cian); sub-slots H+30/H+60 son `↳ publicado` (no clickeables). Click en publicado abre form con Turno ✓ / Bloquear / Despublicar / ✕. Al cargar turno manual o al confirmar reserva, se eliminan todos los slots_publicados que solapan (overlap bidireccional). POST de publicación limpia sub-slots stale en BD. Cliente filtra por hora exacta. Tabla: `slots_publicados`. Route: `/api/admin/publicar-slot`.
 
 ## Auth / Verificación de identidad
 

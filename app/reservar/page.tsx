@@ -66,9 +66,7 @@ export default function ReservarPage() {
       }
       setTurnosPorHora(mapa)
       setSlotsBloqList((slotsBloq ?? []).map((s) => ({ recurso_id: s.recurso_id, hora: s.hora.slice(0, 5), motivo: s.motivo ?? null })))
-      const pubNorm = (pubData ?? []).map((p: { recurso_id: number; hora: string }) => ({ recurso_id: p.recurso_id, hora: p.hora.substring(0, 5) }))
-      console.log('slots_publicados raw:', JSON.stringify(pubData), 'norm:', JSON.stringify(pubNorm))
-      setSlotsPublicados(pubNorm)
+      setSlotsPublicados((pubData ?? []).map((p: { recurso_id: number; hora: string }) => ({ recurso_id: p.recurso_id, hora: p.hora.substring(0, 5) })))
       if (draftRef.current) {
         const { hora, recursos } = draftRef.current
         draftRef.current = null
@@ -79,6 +77,20 @@ export default function ReservarPage() {
     fetchDatos()
     setHoraSeleccionada('')
     setRecursosSeleccionados([])
+    setSlotsPublicados([])
+  }, [fecha])
+
+  useEffect(() => {
+    if (!fecha) return
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from('slots_publicados')
+        .select('recurso_id, hora')
+        .eq('negocio_id', negocio.id)
+        .eq('fecha', fecha)
+      if (data) setSlotsPublicados(data.map(p => ({ ...p, hora: p.hora.substring(0, 5) })))
+    }, 10000)
+    return () => clearInterval(interval)
   }, [fecha])
 
   useEffect(() => {
@@ -132,7 +144,6 @@ export default function ReservarPage() {
       slotsPublicados.some(p => Number(p.recurso_id) === r.id && p.hora.substring(0, 5) === hora) &&
       !recursosOcupados(hora).includes(r.id)
     ).map(r => r.id)
-    if (result.length > 0) console.log('recursosReservables', hora, '→', result, 'slotsPublicados:', JSON.stringify(slotsPublicados))
     return result
   }
 
