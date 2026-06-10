@@ -34,6 +34,7 @@ export default function ReservarPage() {
   const [horariosBloqueados, setHorariosBloqueados] = useState<string[]>([])
   const [emailVerificado, setEmailVerificado] = useState<string | null>(null)
   const [slotsPublicados, setSlotsPublicados] = useState<Array<{ recurso_id: number; hora: string }>>([])
+  const [pollTick, setPollTick] = useState(0)
   const draftRef = useRef<{ hora: string; recursos: number[] } | null>(null)
 
   useEffect(() => {
@@ -83,13 +84,15 @@ export default function ReservarPage() {
   useEffect(() => {
     if (!fecha || !negocio.features?.slotsPublicados) return
     const interval = setInterval(async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('slots_publicados')
         .select('recurso_id, hora')
         .eq('negocio_id', negocio.id)
         .eq('fecha', fecha)
-      if (error) { console.error('[polling slots_publicados]', error); return }
-      setSlotsPublicados(data.map(p => ({ ...p, hora: p.hora.substring(0, 5) })))
+      if (data) {
+        setSlotsPublicados(data.map(p => ({ ...p, hora: p.hora.substring(0, 5) })))
+        setPollTick(t => t + 1)
+      }
     }, 10000)
     return () => clearInterval(interval)
   }, [fecha])
