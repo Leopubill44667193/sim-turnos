@@ -81,14 +81,15 @@ export default function ReservarPage() {
   }, [fecha])
 
   useEffect(() => {
-    if (!fecha) return
+    if (!fecha || !negocio.features?.slotsPublicados) return
     const interval = setInterval(async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('slots_publicados')
         .select('recurso_id, hora')
         .eq('negocio_id', negocio.id)
         .eq('fecha', fecha)
-      if (data) setSlotsPublicados(data.map(p => ({ ...p, hora: p.hora.substring(0, 5) })))
+      if (error) { console.error('[polling slots_publicados]', error); return }
+      setSlotsPublicados(data.map(p => ({ ...p, hora: p.hora.substring(0, 5) })))
     }, 10000)
     return () => clearInterval(interval)
   }, [fecha])
