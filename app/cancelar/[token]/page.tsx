@@ -50,6 +50,15 @@ export default function CancelarTokenPage() {
 
     await supabase.from('turnos').delete().eq('id', turno.id)
 
+    if (negocio.features?.slotsPublicados) {
+      await supabase.from('slots_publicados').insert({
+        negocio_id: negocio.id,
+        recurso_id: turno.simulador_id,
+        fecha: turno.fecha,
+        hora: turno.hora_inicio,
+      })
+    }
+
     const fechaFormateada = new Date(turno.fecha + 'T12:00:00').toLocaleDateString('es-AR', {
       weekday: 'long', day: 'numeric', month: 'long'
     })
