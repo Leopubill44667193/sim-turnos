@@ -4,6 +4,7 @@ import prgrssv from './prgrssv'
 import lacancha from './lacancha'
 import landing from './landing'
 import demoPadel from './demo-padel'
+import bogado from './bogado'
 
 // Agregá nuevos negocios acá
 const configs: Record<string, NegocioConfig> = {
@@ -12,6 +13,7 @@ const configs: Record<string, NegocioConfig> = {
   'lacancha': lacancha,
   'landing': landing,
   'demo-padel': demoPadel,
+  'bogado': bogado,
 }
 
 export { configs }

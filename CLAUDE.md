@@ -27,6 +27,7 @@ Sistema de reservas online configurable por negocio. Un solo repo, una sola base
 | `prgrssv` | Prgrssv | Zeballos 2239 6A, Rosario | 1 peluquero, 30 min | 09:00-19:30 Lun-Vie |
 | `lacancha` | La Cancha Padel | Av. 20 de Diciembre 180, Rojas | 4 canchas, intervalo 30 min, turno 90 min, asignacionAutomatica | 09:00-22:30 todos los días |
 | `demo-padel` | Club Demo Pádel | Av. Siempreviva 742, Rosario | 4 canchas, 90 min | 09:00-00:00 todos los días |
+| `bogado` | Bogado Pádel | Zona rural, Rosario, Santa Fe | 1 cancha, intervalo 30 min, turno 90 min, slotsPublicados | 09:00-22:30 todos los días |
 
 ## Dominios
 

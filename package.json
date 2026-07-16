@@ -9,6 +9,7 @@
     "dev:lacancha": "NEXT_PUBLIC_NEGOCIO_ID=lacancha next dev",
     "dev:landing": "NEXT_PUBLIC_NEGOCIO_ID=landing next dev",
     "dev:demo-padel": "NEXT_PUBLIC_NEGOCIO_ID=demo-padel next dev",
+    "dev:bogado": "NEXT_PUBLIC_NEGOCIO_ID=bogado next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
