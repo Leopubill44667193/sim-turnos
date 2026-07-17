@@ -9,13 +9,14 @@ type Props = {
   value: string
   onChange: (fecha: string) => void
   diasHabiles?: number[]
+  maxDiasAnticipacion?: number
 }
 
-export default function CalendarioInline({ value, onChange, diasHabiles }: Props) {
+export default function CalendarioInline({ value, onChange, diasHabiles, maxDiasAnticipacion }: Props) {
   const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' })
   const maxFecha = (() => {
     const d = new Date(hoy + 'T12:00:00')
-    d.setDate(d.getDate() + 7)
+    d.setDate(d.getDate() + (maxDiasAnticipacion ?? 7))
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   })()
   const [anioHoy, mesHoy] = hoy.split('-').map(Number) // mesHoy es 1-indexed

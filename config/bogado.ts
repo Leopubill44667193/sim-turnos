@@ -22,6 +22,7 @@ const config: NegocioConfig = {
   features: { asignacionAutomatica: true, slotsPublicados: true, limiteReservasPorIP: 2 },
   telefonoPlaceholder: '341 123-4567',
   heroTexto: 'CANCHA DE PÁDEL',
+  maxDiasAnticipacion: 14,
   cancelacionMinHs: 6,
   whatsappNegocio: '5493412662777',
 }

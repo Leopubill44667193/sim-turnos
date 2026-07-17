@@ -41,6 +41,7 @@ export type NegocioConfig = {
   fontTitle?: string            // e.g. 'Bebas Neue' — fuente de títulos, cargada desde Google Fonts
   bgTexture?: 'grid'            // textura de fondo sutil
   heroTexto?: string            // sobreescribe la línea en acento del hero ("RESERVÁ TU ...")
+  maxDiasAnticipacion?: number  // límite de días seleccionables en el calendario desde hoy. undefined = 7 (comportamiento actual)
 }
 
 /** Genera el array de horarios a partir del rango del negocio.

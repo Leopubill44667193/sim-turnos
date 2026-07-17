@@ -321,6 +321,7 @@ export default function ReservarPage() {
             value={fecha}
             onChange={setFecha}
             diasHabiles={negocio.diasHabiles}
+            maxDiasAnticipacion={negocio.maxDiasAnticipacion}
           />
         </div>
 
