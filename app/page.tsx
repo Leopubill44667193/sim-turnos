@@ -178,7 +178,7 @@ export default function Home() {
           }}
         >
           Reservá tu<br />
-          <span className="text-[var(--accent)]">{negocio.recursoNombre.toLowerCase()}</span>
+          <span className="text-[var(--accent)]">{(negocio.heroTexto ?? negocio.recursoNombre).toLowerCase()}</span>
         </h2>
         <p className="text-gray-600 text-sm tracking-wide mb-12">
           {negocio.recursos.length} {negocio.recursoNombrePlural.toLowerCase()} · Turnos de {negocio.duracionMinutos} min · Reservá tu {negocio.recursoNombre.toLowerCase()}

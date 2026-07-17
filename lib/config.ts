@@ -40,6 +40,7 @@ export type NegocioConfig = {
   whatsappNegocio?: string      // número de WhatsApp del local sin +, ej: "5492474470920"
   fontTitle?: string            // e.g. 'Bebas Neue' — fuente de títulos, cargada desde Google Fonts
   bgTexture?: 'grid'            // textura de fondo sutil
+  heroTexto?: string            // sobreescribe la línea en acento del hero ("RESERVÁ TU ...")
 }
 
 /** Genera el array de horarios a partir del rango del negocio.

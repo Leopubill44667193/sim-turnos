@@ -2,8 +2,8 @@ import type { NegocioConfig } from '@/lib/config'
 
 const config: NegocioConfig = {
   id: 'bogado',
-  nombre: 'Bogado Pádel',
-  nombreDisplay: { parte1: 'Bogado', parte2: ' Pádel' },
+  nombre: 'Complejo Bogado',
+  nombreDisplay: { parte1: 'Complejo', parte2: ' Bogado' },
   direccion: 'Coronel Bogado, Santa Fe · maps.google.com/?q=-33.318139,-60.597694',
   horario: {
     inicioMin: 9 * 60,
@@ -11,16 +11,17 @@ const config: NegocioConfig = {
     intervaloMinutos: 30,
   },
   recursos: [
-    { id: 1, nombre: 'Cancha Central' },
+    { id: 1, nombre: 'Cancha de Pádel Complejo Bogado' },
   ],
-  recursoNombre: 'Cancha Central',
-  recursoNombrePlural: 'Canchas',
+  recursoNombre: 'Cancha de Pádel Complejo Bogado',
+  recursoNombrePlural: 'Canchas de Pádel',
   duracionMinutos: 90,
   adminPassword: 'Bogado123',
   emoji: '🎾',
   tema: { accent: '#F47C20', accentHover: '#d96a10', bg: '#0a0f1e' },
   features: { asignacionAutomatica: true, slotsPublicados: true, limiteReservasPorIP: 2 },
   telefonoPlaceholder: '341 123-4567',
+  heroTexto: 'CANCHA DE PÁDEL',
   cancelacionMinHs: 6,
   whatsappNegocio: '5493412662777',
 }
