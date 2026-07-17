@@ -5,6 +5,7 @@ const config: NegocioConfig = {
   nombre: 'Complejo Bogado',
   nombreDisplay: { parte1: 'Complejo', parte2: ' Bogado' },
   direccion: 'Coronel Bogado, Santa Fe · maps.google.com/?q=-33.318139,-60.597694',
+  direccionCorta: 'Coronel Bogado, Santa Fe',
   horario: {
     inicioMin: 9 * 60,
     finMin: 24 * 60,  // 00:00 — permite mostrar sub-slots del último turno de 22:30

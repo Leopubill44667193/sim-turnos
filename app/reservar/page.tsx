@@ -305,7 +305,7 @@ export default function ReservarPage() {
             <span className="text-[var(--accent)]">{negocio.nombreDisplay?.parte1 ?? negocio.nombre.split('.')[0] + '.'}</span>
             {negocio.nombreDisplay ? negocio.nombreDisplay.parte2 : negocio.nombre.split('.').slice(1).join('.')}
           </h1>
-          <p className="text-xs text-gray-600 tracking-wider uppercase mt-0.5">{negocio.direccion}</p>
+          <p className="text-xs text-gray-600 tracking-wider uppercase mt-0.5">{negocio.direccionCorta ?? negocio.direccion}</p>
         </div>
         <a href="/" className="text-xs text-gray-600 hover:text-[var(--accent)] tracking-widest uppercase transition">← Volver</a>
       </div>

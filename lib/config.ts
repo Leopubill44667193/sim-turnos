@@ -42,6 +42,7 @@ export type NegocioConfig = {
   bgTexture?: 'grid'            // textura de fondo sutil
   heroTexto?: string            // sobreescribe la línea en acento del hero ("RESERVÁ TU ...")
   maxDiasAnticipacion?: number  // límite de días seleccionables en el calendario desde hoy. undefined = 7 (comportamiento actual)
+  direccionCorta?: string       // sobreescribe negocio.direccion en el header y footer
 }
 
 /** Genera el array de horarios a partir del rango del negocio.

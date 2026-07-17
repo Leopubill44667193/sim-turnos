@@ -91,7 +91,7 @@ export default function RootLayout({
         {children}
         {negocio.id !== 'landing' && (
           <footer className="py-3 text-center text-xs text-white/20">
-            {negocio.direccion}
+            {negocio.direccionCorta ?? negocio.direccion}
           </footer>
         )}
       </body>
