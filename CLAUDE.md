@@ -27,7 +27,7 @@ Sistema de reservas online configurable por negocio. Un solo repo, una sola base
 | `prgrssv` | Prgrssv | Zeballos 2239 6A, Rosario | 1 peluquero, 30 min | 09:00-19:30 Lun-Vie |
 | `lacancha` | La Cancha Padel | Av. 20 de Diciembre 180, Rojas | 4 canchas, intervalo 30 min, turno 90 min, asignacionAutomatica | 09:00-22:30 todos los días |
 | `demo-padel` | Club Demo Pádel | Av. Siempreviva 742, Rosario | 4 canchas, 90 min | 09:00-00:00 todos los días |
-| `bogado` | Bogado Pádel | Zona rural, Rosario, Santa Fe | 1 cancha, intervalo 30 min, turno 90 min, slotsPublicados | 09:00-22:30 todos los días |
+| `bogado` | Complejo Bogado | Coronel Bogado, Santa Fe | 1 cancha, intervalo 30 min, turno 90 min, asignacionAutomatica, slotsPublicados, maxDiasAnticipacion 14 | 09:00-22:30 todos los días |
 
 ## Dominios
 
@@ -119,6 +119,7 @@ No hay tests configurados y no se deben agregar salvo que se pida explícitament
     parte2?: string     // color normal, opcional. Incluir separadores (espacios, puntos) acá si se necesitan
   }
   direccion: string     // dirección, se muestra en el header y footer
+  direccionCorta?: string     // sobreescribe negocio.direccion en el header y footer cuando está definida (negocio.direccionCorta ?? negocio.direccion)
   horario: {
     inicioMin: number   // minutos desde medianoche. Ej: 9*60 = 540 (09:00)
     finMin: number      // minutos de cierre. Ej: 24*60 = 1440 (00:00). Soporta cruce de medianoche
@@ -153,6 +154,8 @@ No hay tests configurados y no se deben agregar salvo que se pida explícitament
   fontTitle?: string              // fuente para títulos, cargada desde Google Fonts vía next/font. Ej: 'Bebas Neue'
   bgTexture?: 'grid'              // textura de fondo sutil. 'grid' = grilla verde semitransparente
   telefonoPlaceholder?: string    // placeholder del input de teléfono en el flujo de reserva. Ej: '2474 123456'. Default: '11 1234-5678'
+  heroTexto?: string              // sobreescribe la línea en acento del hero ("Reservá tu ..."). Si undefined usa negocio.recursoNombre. Ej: bogado = 'CANCHA DE PÁDEL'
+  maxDiasAnticipacion?: number    // límite de días seleccionables en el calendario de /reservar desde hoy. undefined = 7 (comportamiento default de CalendarioInline). bogado = 14
 }
 ```
 
@@ -352,6 +355,8 @@ Los colores se definen en `config/<negocio>.ts` como `tema: { accent, accentHove
 `fontTitle` carga la fuente indicada desde Google Fonts vía `next/font` (self-hosted) e inyecta `--font-title` como CSS variable. El hero de `app/page.tsx` la usa via `font-family: var(--font-title, inherit)` — sin efecto en negocios que no la definen. Cuando se define, también se sobreescribe `font-weight` a normal (necesario para fuentes display de un solo peso como Bebas Neue).
 
 `bgTexture: 'grid'` agrega un `<div>` fijo con `z-index: -10` en el body que muestra una grilla semitransparente usando el color de acento del negocio.
+
+`CalendarioInline` (usado en `/reservar`) limita los días seleccionables a `negocio.maxDiasAnticipacion` días desde hoy; si no está definido, el límite default es 7 días (comportamiento histórico, se preserva igual en todos los negocios que no definan el campo).
 
 ### Helpers de horario (`lib/config.ts`)
 - `generarHorarios()` — crea array de slots desde apertura/cierre

@@ -14,6 +14,7 @@ type Turno = {
   simulador_id: number
   created_at: string
   email_verificacion: string | null
+  cliente_id: string
   clientes: { nombre: string; telefono: string } | null
   simuladores: { nombre: string } | null
 }
@@ -75,6 +76,10 @@ export default function Admin() {
   const [slotsBloqueados, setSlotsBloqueados] = useState<Record<string, string | null>>({})
   const [procesandoHora, setProcesandoHora] = useState<Set<string>>(new Set())
   const [slotsPublicadosMap, setSlotsPublicadosMap] = useState<Record<string, true>>({})
+  const [editando, setEditando] = useState<Turno | null>(null)
+  const [editNombre, setEditNombre] = useState('')
+  const [editTelefono, setEditTelefono] = useState('')
+  const [guardandoEdit, setGuardandoEdit] = useState(false)
 
   const fetchResumen = async () => {
     setLoadingResumen(true)
@@ -111,7 +116,7 @@ export default function Admin() {
     setLoading(true)
     let query = supabase
       .from('turnos')
-      .select('id, fecha, hora_inicio, hora_fin, simulador_id, created_at, email_verificacion, clientes ( nombre, telefono ), simuladores ( nombre )')
+      .select('id, fecha, hora_inicio, hora_fin, simulador_id, cliente_id, created_at, email_verificacion, clientes ( nombre, telefono ), simuladores ( nombre )')
       .eq('negocio_id', negocio.id)
     if (modo === 'dia') query = query.eq('fecha', fecha)
     else if (modo === 'proximos') query = query.gte('fecha', hoy())
@@ -320,6 +325,31 @@ export default function Admin() {
     if (!window.confirm('Eliminar este turno?')) return
     const { error } = await supabase.from('turnos').delete().eq('id', id)
     if (!error) setTurnos(turnos.filter((t) => t.id !== id))
+  }
+
+  const abrirEdicion = (t: Turno) => {
+    setEditando(t)
+    setEditNombre(t.clientes?.nombre ?? '')
+    setEditTelefono(t.clientes?.telefono ?? '')
+  }
+
+  const cerrarEdicion = () => {
+    setEditando(null)
+    setEditNombre('')
+    setEditTelefono('')
+  }
+
+  const guardarEdicion = async () => {
+    if (!editando) return
+    const nombre = editNombre.trim()
+    const telefono = editTelefono.trim()
+    if (!nombre) return
+    setGuardandoEdit(true)
+    const { error } = await supabase.from('clientes').update({ nombre, telefono: telefono || null }).eq('id', editando.cliente_id)
+    setGuardandoEdit(false)
+    if (error) { alert('Error al guardar: ' + error.message); return }
+    setTurnos(prev => prev.map(t => t.cliente_id === editando.cliente_id ? { ...t, clientes: { nombre, telefono } } : t))
+    cerrarEdicion()
   }
 
   function esPasado(f: string, hora: string) {
@@ -708,14 +738,25 @@ export default function Admin() {
                       return (
                         <td key={r.id} className="p-2">
                           {turno ? (
-                            <div className="bg-[var(--accent)]/10 border border-[var(--accent)]/30 rounded-lg p-2 text-center group relative">
-                              <p className="text-xs font-bold text-[var(--accent)]/80 truncate">{turno.clientes?.nombre}</p>
-                              <p className="text-xs text-gray-600">{turno.clientes?.telefono}</p>
-                              <button
-                                onClick={() => handleDelete(turno.id)}
-                                className="absolute top-1 right-1 text-[var(--accent)]/50 hover:text-[var(--accent)]/80 text-xs opacity-0 group-hover:opacity-100 transition"
-                              >✕</button>
-                            </div>
+                            turno.email_verificacion === null ? (
+                              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-2 text-center group relative">
+                                <p className="text-xs font-bold text-green-500/80 truncate">{turno.clientes?.nombre}</p>
+                                <p className="text-xs text-gray-600">{turno.clientes?.telefono}</p>
+                                <button
+                                  onClick={() => handleDelete(turno.id)}
+                                  className="absolute top-1 right-1 text-green-500/50 hover:text-green-500/80 text-xs opacity-0 group-hover:opacity-100 transition"
+                                >✕</button>
+                              </div>
+                            ) : (
+                              <div className="bg-[var(--accent)]/10 border border-[var(--accent)]/30 rounded-lg p-2 text-center group relative">
+                                <p className="text-xs font-bold text-[var(--accent)]/80 truncate">{turno.clientes?.nombre}</p>
+                                <p className="text-xs text-gray-600">{turno.clientes?.telefono}</p>
+                                <button
+                                  onClick={() => handleDelete(turno.id)}
+                                  className="absolute top-1 right-1 text-[var(--accent)]/50 hover:text-[var(--accent)]/80 text-xs opacity-0 group-hover:opacity-100 transition"
+                                >✕</button>
+                              </div>
+                            )
                           ) : esContinuacion ? (
                             <div className="rounded-lg p-2 text-center border border-white/5 text-gray-700 text-xs">↳ turno anterior</div>
                           ) : motivoContinuacion ? (
@@ -877,7 +918,8 @@ export default function Admin() {
                     <td className="p-4 text-gray-600 text-xs">
                       {(() => { const d = new Date(t.created_at); d.setHours(d.getHours() - 3); return d.toLocaleString('es-AR', { hour12: false }) })()}
                     </td>
-                    <td className="p-4">
+                    <td className="p-4 flex gap-3">
+                      <button onClick={() => abrirEdicion(t)} className="text-gray-500 hover:text-white text-xs uppercase tracking-widest transition">Editar</button>
                       <button onClick={() => handleDelete(t.id)} className="text-[var(--accent)] hover:text-[var(--accent)]/80 text-xs uppercase tracking-widest transition">Eliminar</button>
                     </td>
                   </tr>
@@ -888,6 +930,43 @@ export default function Admin() {
         )}
 
       </div>
+
+      {editando && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-[var(--bg)] border border-white/10 rounded-xl p-6 w-full max-w-sm">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-4">Editar cliente</h3>
+            <div className="mb-3">
+              <label className="block text-xs uppercase tracking-widest text-gray-600 mb-1">Nombre</label>
+              <input
+                type="text"
+                value={editNombre}
+                onChange={e => setEditNombre(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-white/30"
+                autoFocus
+              />
+            </div>
+            <div className="mb-5">
+              <label className="block text-xs uppercase tracking-widest text-gray-600 mb-1">Teléfono</label>
+              <input
+                type="text"
+                value={editTelefono}
+                onChange={e => setEditTelefono(e.target.value.replace(/[^0-9]/g, ''))}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-white/30"
+              />
+            </div>
+            <div className="flex justify-end gap-4">
+              <button onClick={cerrarEdicion} className="text-xs uppercase tracking-widest text-gray-600 hover:text-gray-400 transition">Cancelar</button>
+              <button
+                onClick={guardarEdicion}
+                disabled={guardandoEdit || !editNombre.trim()}
+                className="text-xs uppercase tracking-widest text-[var(--accent)] hover:text-[var(--accent)]/80 font-bold transition disabled:opacity-40"
+              >
+                {guardandoEdit ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
