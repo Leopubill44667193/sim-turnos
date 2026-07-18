@@ -19,9 +19,19 @@ type Turno = {
   simuladores: { nombre: string } | null
 }
 
+type TurnoFijo = {
+  id: string
+  recurso_id: number
+  dia_semana: number
+  hora: string
+  nombre: string
+  telefono: string | null
+}
+
 const HORARIOS = generarHorarios(negocio.horario.inicioMin, negocio.horario.finMin, negocio.horario.intervaloMinutos)
 const RECURSOS = negocio.recursos
 const DIAS_LABEL = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+const DIAS_SEMANA_LABEL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
 function hoy() {
   return new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 10)
@@ -55,7 +65,7 @@ function DiffBadge({ diff }: { diff: number }) {
 }
 
 export default function Admin() {
-  const [modo, setModo] = useState<'resumen' | 'proximos' | 'todos' | 'dia'>('resumen')
+  const [modo, setModo] = useState<'resumen' | 'proximos' | 'todos' | 'dia' | 'fijos'>('resumen')
   const [turnos, setTurnos] = useState<Turno[]>([])
   const [loading, setLoading] = useState(false)
   const [fecha, setFecha] = useState(hoy())
@@ -80,6 +90,15 @@ export default function Admin() {
   const [editNombre, setEditNombre] = useState('')
   const [editTelefono, setEditTelefono] = useState('')
   const [guardandoEdit, setGuardandoEdit] = useState(false)
+  const [turnosFijos, setTurnosFijos] = useState<TurnoFijo[]>([])
+  const [loadingFijos, setLoadingFijos] = useState(false)
+  const [mostrandoFormFijo, setMostrandoFormFijo] = useState(false)
+  const [fijoDiaSemana, setFijoDiaSemana] = useState(1)
+  const [fijoHora, setFijoHora] = useState(HORARIOS[0] ?? '')
+  const [fijoRecursoId, setFijoRecursoId] = useState(RECURSOS[0]?.id ?? 0)
+  const [fijoNombre, setFijoNombre] = useState('')
+  const [fijoTelefono, setFijoTelefono] = useState('')
+  const [guardandoFijo, setGuardandoFijo] = useState(false)
 
   const fetchResumen = async () => {
     setLoadingResumen(true)
@@ -105,6 +124,8 @@ export default function Admin() {
   useEffect(() => {
     if (modo === 'resumen') {
       fetchResumen()
+    } else if (modo === 'fijos') {
+      fetchTurnosFijos()
     } else {
       fetchTurnos()
       if (modo === 'dia') { fetchBloqueo(); fetchHorariosBloqueados(); fetchSlotsBloqueados(); fetchSlotsPublicados() }
@@ -162,6 +183,128 @@ export default function Admin() {
     const map: Record<string, true> = {}
     for (const d of data ?? []) map[`${d.recurso_id}_${d.hora.slice(0, 5)}`] = true
     setSlotsPublicadosMap(map)
+  }
+
+  const generarTurnosDesdeFijo = async (fijo: { recurso_id: number; dia_semana: number; hora: string; nombre: string; telefono: string | null }, ocurrencias: number = 4, desde: string = hoy()) => {
+    const horaCorta = fijo.hora.slice(0, 5)
+    const [h, m] = horaCorta.split(':').map(Number)
+    const total = h * 60 + m + negocio.duracionMinutos
+    const horaFin = String(Math.floor(total / 60) % 24).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0')
+
+    const fechas: string[] = []
+    const d = new Date(desde + 'T12:00:00')
+    while (fechas.length < ocurrencias) {
+      if (d.getDay() === fijo.dia_semana) {
+        fechas.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
+      }
+      d.setDate(d.getDate() + 1)
+    }
+
+    for (const fecha of fechas) {
+      const { data: existente } = await supabase
+        .from('turnos')
+        .select('id')
+        .eq('negocio_id', negocio.id)
+        .eq('simulador_id', fijo.recurso_id)
+        .eq('fecha', fecha)
+        .eq('hora_inicio', horaCorta)
+        .single()
+      if (existente) continue
+
+      let clienteId: string
+      if (fijo.telefono) {
+        const { data: clienteExistente } = await supabase.from('clientes').select('id').eq('telefono', fijo.telefono).eq('negocio_id', negocio.id).single()
+        if (clienteExistente) {
+          clienteId = clienteExistente.id
+        } else {
+          const { data: nuevo } = await supabase.from('clientes').insert({ nombre: fijo.nombre, telefono: fijo.telefono, negocio_id: negocio.id }).select('id').single()
+          if (!nuevo) continue
+          clienteId = nuevo.id
+        }
+      } else {
+        const { data: nuevo } = await supabase.from('clientes').insert({ nombre: fijo.nombre, telefono: null, negocio_id: negocio.id }).select('id').single()
+        if (!nuevo) continue
+        clienteId = nuevo.id
+      }
+
+      await supabase.from('turnos').insert({
+        negocio_id: negocio.id,
+        simulador_id: fijo.recurso_id,
+        cliente_id: clienteId,
+        fecha,
+        hora_inicio: horaCorta,
+        hora_fin: horaFin,
+        email_verificacion: null,
+      })
+    }
+  }
+
+  const fetchTurnosFijos = async () => {
+    setLoadingFijos(true)
+    const { data } = await supabase
+      .from('turnos_fijos')
+      .select('id, recurso_id, dia_semana, hora, nombre, telefono')
+      .eq('negocio_id', negocio.id)
+      .eq('activo', true)
+      .order('dia_semana', { ascending: true })
+      .order('hora', { ascending: true })
+    setTurnosFijos(data ?? [])
+    setLoadingFijos(false)
+  }
+
+  const crearFijo = async () => {
+    if (!fijoNombre.trim()) return
+    setGuardandoFijo(true)
+    const nombre = fijoNombre.trim()
+    const telefono = fijoTelefono.trim() || null
+    const { error } = await supabase.from('turnos_fijos').insert({
+      negocio_id: negocio.id,
+      recurso_id: fijoRecursoId,
+      dia_semana: fijoDiaSemana,
+      hora: fijoHora,
+      nombre,
+      telefono,
+    })
+    if (error) {
+      setGuardandoFijo(false)
+      alert('Error al guardar: ' + error.message)
+      return
+    }
+    await generarTurnosDesdeFijo({ recurso_id: fijoRecursoId, dia_semana: fijoDiaSemana, hora: fijoHora, nombre, telefono })
+    setGuardandoFijo(false)
+    setFijoNombre(''); setFijoTelefono(''); setMostrandoFormFijo(false)
+    fetchTurnosFijos()
+  }
+
+  const desactivarFijo = async (fijo: TurnoFijo) => {
+    if (!window.confirm('Desactivar este turno fijo?')) return
+    const horaCorta = fijo.hora.slice(0, 5)
+    await supabase
+      .from('turnos')
+      .delete()
+      .eq('negocio_id', negocio.id)
+      .eq('simulador_id', fijo.recurso_id)
+      .eq('hora_inicio', horaCorta)
+      .gte('fecha', hoy())
+    await supabase.from('turnos_fijos').update({ activo: false }).eq('id', fijo.id)
+    setTurnosFijos(prev => prev.filter(f => f.id !== fijo.id))
+  }
+
+  const renovarFijo = async (fijo: TurnoFijo) => {
+    const horaCorta = fijo.hora.slice(0, 5)
+    const { data: ultimo } = await supabase
+      .from('turnos')
+      .select('fecha')
+      .eq('negocio_id', negocio.id)
+      .eq('simulador_id', fijo.recurso_id)
+      .eq('hora_inicio', horaCorta)
+      .gte('fecha', hoy())
+      .order('fecha', { ascending: false })
+      .limit(1)
+      .single()
+    const desde = ultimo?.fecha ?? hoy()
+    await generarTurnosDesdeFijo({ recurso_id: fijo.recurso_id, dia_semana: fijo.dia_semana, hora: fijo.hora, nombre: fijo.nombre, telefono: fijo.telefono }, 4, desde)
+    alert('Renovado')
   }
 
   const toggleHorario = async (hora: string) => {
@@ -521,6 +664,8 @@ export default function Admin() {
     ? `Próximos turnos · ${proximosCombinados.length} turnos`
     : modo === 'todos'
     ? `Todos los turnos · ${turnosFiltrados.length} turnos`
+    : modo === 'fijos'
+    ? `Turnos fijos · ${turnosFijos.length}`
     : `${fechaFormateada} · ${turnosFiltrados.length} turnos`
 
   const navClass = (m: typeof modo) =>
@@ -544,6 +689,7 @@ export default function Admin() {
               <button onClick={() => setModo('proximos')} className={navClass('proximos')}>Próximos</button>
               <button onClick={() => setModo('todos')} className={navClass('todos')}>Todos</button>
               <button onClick={() => setModo('dia')} className={navClass('dia')}>Por día</button>
+              <button onClick={() => setModo('fijos')} className={navClass('fijos')}>Fijos</button>
             </div>
             {modo === 'dia' && (
               <>
@@ -703,6 +849,123 @@ export default function Admin() {
                 </div>
               </section>
 
+            </div>
+          )
+        ) : modo === 'fijos' ? (
+          loadingFijos ? (
+            <p className="text-gray-600 tracking-widest uppercase text-sm">Cargando...</p>
+          ) : (
+            <div className="space-y-6">
+              <button
+                onClick={() => setMostrandoFormFijo(v => !v)}
+                className="text-xs uppercase tracking-widest text-gray-600 hover:text-green-500 transition border border-white/5 hover:border-green-500/30 rounded-xl px-5 py-3 w-full text-left"
+              >
+                {mostrandoFormFijo ? '✕ Cancelar' : '+ Agregar fijo'}
+              </button>
+
+              {mostrandoFormFijo && (
+                <div className="bg-white/5 border border-white/10 rounded-xl p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-gray-600 mb-1">Día</label>
+                    <select
+                      value={fijoDiaSemana}
+                      onChange={e => setFijoDiaSemana(Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none"
+                    >
+                      {DIAS_SEMANA_LABEL.map((label, i) => (
+                        <option key={i} value={i} className="bg-black">{label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-gray-600 mb-1">Hora</label>
+                    <select
+                      value={fijoHora}
+                      onChange={e => setFijoHora(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none"
+                    >
+                      {HORARIOS.map(h => (
+                        <option key={h} value={h} className="bg-black">{h}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-gray-600 mb-1">{negocio.recursoNombre}</label>
+                    <select
+                      value={fijoRecursoId}
+                      onChange={e => setFijoRecursoId(Number(e.target.value))}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none"
+                    >
+                      {RECURSOS.map(r => (
+                        <option key={r.id} value={r.id} className="bg-black">{r.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs uppercase tracking-widest text-gray-600 mb-1">Teléfono (opcional)</label>
+                    <input
+                      type="text"
+                      value={fijoTelefono}
+                      onChange={e => setFijoTelefono(e.target.value.replace(/[^0-9]/g, ''))}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs uppercase tracking-widest text-gray-600 mb-1">Nombre</label>
+                    <input
+                      type="text"
+                      value={fijoNombre}
+                      onChange={e => setFijoNombre(e.target.value)}
+                      placeholder="Nombre cliente*"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none placeholder-gray-700"
+                    />
+                  </div>
+                  <div className="sm:col-span-2 flex justify-end gap-4">
+                    <button onClick={() => setMostrandoFormFijo(false)} className="text-xs uppercase tracking-widest text-gray-600 hover:text-gray-400 transition">Cancelar</button>
+                    <button
+                      onClick={crearFijo}
+                      disabled={guardandoFijo || !fijoNombre.trim()}
+                      className="text-xs uppercase tracking-widest text-green-500 hover:text-green-400 font-bold transition disabled:opacity-40"
+                    >
+                      {guardandoFijo ? 'Guardando...' : 'Guardar'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {turnosFijos.length === 0 ? (
+                <p className="text-gray-600">No hay turnos fijos activos.</p>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-white/10">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/10">
+                        <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Día</th>
+                        <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Hora</th>
+                        <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">{negocio.recursoNombre}</th>
+                        <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Cliente</th>
+                        <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Telefono</th>
+                        <th className="p-4"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {turnosFijos.map(f => (
+                        <tr key={f.id} className="border-b border-white/5 hover:bg-white/5 transition">
+                          <td className="p-4">{DIAS_SEMANA_LABEL[f.dia_semana]}</td>
+                          <td className="p-4">{f.hora.slice(0, 5)}</td>
+                          <td className="p-4 font-medium">{RECURSOS.find(r => r.id === f.recurso_id)?.nombre ?? f.recurso_id}</td>
+                          <td className="p-4">{f.nombre}</td>
+                          <td className="p-4 text-gray-400">{f.telefono ?? '—'}</td>
+                          <td className="p-4 flex gap-3">
+                            <button onClick={() => renovarFijo(f)} className="text-gray-500 hover:text-white text-xs uppercase tracking-widest transition">Renovar</button>
+                            <button onClick={() => desactivarFijo(f)} className="text-[var(--accent)] hover:text-[var(--accent)]/80 text-xs uppercase tracking-widest transition">Desactivar</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )
         ) : loading ? (

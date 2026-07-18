@@ -320,6 +320,40 @@ CREATE UNIQUE INDEX idx_slots_bloqueados_unique
 
 RLS deshabilitado.
 
+### `turnos_fijos`
+| campo | tipo | notas |
+|-------|------|-------|
+| id | uuid PK | default gen_random_uuid() |
+| negocio_id | text NOT NULL | |
+| recurso_id | int NOT NULL | |
+| dia_semana | int NOT NULL | 0=Dom, 1=Lun ... 6=Sáb (convención `Date.getDay()`) |
+| hora | time NOT NULL | |
+| nombre | text NOT NULL | |
+| telefono | text | nullable |
+| activo | boolean NOT NULL | default true. Se desactiva (no se borra) desde la pestaña Fijos del admin |
+| created_at | timestamptz NOT NULL | default now() |
+
+**Índice:** `(negocio_id, dia_semana, activo)`
+
+Turnos recurrentes por día de la semana (no confundir con los slots "fijos" con motivo de `slots_bloqueados`, que son bloqueos manuales de un solo día). Se gestionan desde la pestaña **Fijos** del admin. Cada vez que se abre la pestaña **Por día** (`fetchTurnos` con `modo === 'dia'`), `aplicarTurnosFijos` calcula el día de la semana de la fecha seleccionada, busca los `turnos_fijos` activos para ese `dia_semana` y, para cada uno que todavía no tenga un turno real en `turnos` (mismo `recurso_id` + `hora_inicio` para esa fecha), crea (o reutiliza) el cliente por `(negocio_id, telefono)` e inserta el turno en `turnos` con `email_verificacion: null` — por eso aparece en verde en la grilla, igual que un turno manual. Si no se insertó ninguno no hay refetch extra. Migración ejecutada manualmente en Supabase (no vía script del repo).
+
+```sql
+CREATE TABLE turnos_fijos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  negocio_id text NOT NULL,
+  recurso_id int NOT NULL,
+  dia_semana int NOT NULL,
+  hora time NOT NULL,
+  nombre text NOT NULL,
+  telefono text,
+  activo boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_turnos_fijos_negocio ON turnos_fijos (negocio_id, dia_semana, activo);
+```
+
+RLS deshabilitado.
+
 ---
 
 ## Rutas
@@ -333,7 +367,7 @@ RLS deshabilitado.
 | `/cancelar/[token]` | Cancelación self-service, sin login |
 | `/cancelar` | Redirige a /mis-turnos |
 | `/mis-turnos` | Buscar turnos propios por teléfono |
-| `/admin` | Panel con cuatro pestañas: Resumen / Próximos / Todos / Por día. **Resumen:** métricas de hoy, semana y mes — combina `turnos` + `slots_bloqueados` con motivo no vacío (los slots con nombre representan reservas del dueño). Query trae desde inicioMes(-1) hasta finMes(0). **Próximos:** combina turnos reales y slots con motivo, ordenados por fecha+hora; slots sin botón Eliminar. **Por día:** grilla + tabla + bloqueos. En la grilla: click en slot libre abre form con opciones: (1) Turno ✓ — carga turno manual (nombre obligatorio, teléfono opcional), se inserta en `turnos`; si el slot está publicado también elimina todos los `slots_publicados` que solapan (fórmula de overlap bidireccional); (2) Bloquear — bloquea ese slot; si estaba publicado también lo despublica; (3) Publicar — solo negocios con `slotsPublicados`, solo si el slot no está publicado; (4) Despublicar — solo si el slot está publicado; (5) ✕ — cierra sin acción. Slot publicado (cian): click → abre el mismo form; sub-slots H+30 y H+60 de un publicado muestran `↳ publicado` en cian tenue y no son clickeables. Bloqueos con motivo: slots +30/+60 muestran `↳ [motivo]`. Click en label de hora → bloquea/desbloquea todos los slots libres de esa fila. Flechas ‹ › para navegar días. |
+| `/admin` | Panel con cinco pestañas: Resumen / Próximos / Todos / Por día / Fijos. **Resumen:** métricas de hoy, semana y mes — combina `turnos` + `slots_bloqueados` con motivo no vacío (los slots con nombre representan reservas del dueño). Query trae desde inicioMes(-1) hasta finMes(0). **Próximos:** combina turnos reales y slots con motivo, ordenados por fecha+hora; slots sin botón Eliminar. **Todos** y **Por día (tabla):** cada fila de turno tiene botones Editar (abre modal para actualizar nombre/teléfono, hace `UPDATE` en `clientes` filtrando por `cliente_id`) y Eliminar. **Por día:** grilla + tabla + bloqueos. En la grilla: turnos con `email_verificacion = null` (cargados manualmente por el admin, incluidos los generados desde `turnos_fijos`) se muestran en verde (`green-500`, mismo color que el botón "Turno ✓"); turnos con email verificado usan el color de acento del negocio. Al entrar a Por día (o cambiar de fecha), `aplicarTurnosFijos` materializa en `turnos` los `turnos_fijos` activos para el día de la semana correspondiente que todavía no tengan turno cargado para esa fecha+recurso+hora. Click en slot libre abre form con opciones: (1) Turno ✓ — carga turno manual (nombre obligatorio, teléfono opcional), se inserta en `turnos`; si el slot está publicado también elimina todos los `slots_publicados` que solapan (fórmula de overlap bidireccional); (2) Bloquear — bloquea ese slot; si estaba publicado también lo despublica; (3) Publicar — solo negocios con `slotsPublicados`, solo si el slot no está publicado; (4) Despublicar — solo si el slot está publicado; (5) ✕ — cierra sin acción. Slot publicado (cian): click → abre el mismo form; sub-slots H+30 y H+60 de un publicado muestran `↳ publicado` en cian tenue y no son clickeables. Bloqueos con motivo: slots +30/+60 muestran `↳ [motivo]`. Click en label de hora → bloquea/desbloquea todos los slots libres de esa fila. Flechas ‹ › para navegar días. **Fijos:** lista de `turnos_fijos` activos (día, hora, recurso, cliente, teléfono) con botón "+ Agregar fijo" (form: día de semana, hora, recurso, nombre, teléfono opcional) y "Desactivar" por fila (setea `activo = false`, no borra). |
 | `/api/notificar` | POST server-side → Twilio Content Templates: admin (TO_1/TO_2) + cliente |
 | `/api/validar-reserva` | POST server-side → valida nombre/teléfono y límite por IP antes del insert |
 | `/api/admin/bloquear-slot` | POST/DELETE server-side → bloquea o desbloquea un slot individual (recurso + fecha + hora) en `slots_bloqueados`. Requiere cookie `admin_session`. |
@@ -474,6 +508,9 @@ ADMIN_PASSWORD=...
 - **Recordatorio 1hs antes por WhatsApp** — requiere cron job, no puede dispararse desde el flujo de reserva.
 - ~~**Turno manual desde admin**~~ — implementado el 2026-05-27. Desde la grilla Por día, click en slot libre permite cargar turno manual (nombre + teléfono opcional) que se guarda en `turnos` como turno real, o bloquear ese slot específico sin afectar slots siguientes.
 - ~~**Sistema de slots publicados**~~ — implementado el 2026-06-09, refinado 2026-06-09. Solo `lacancha` (`features.slotsPublicados: true`). Admin publica slots desde la grilla (cian); sub-slots H+30/H+60 son `↳ publicado` (no clickeables). Click en publicado abre form con Turno ✓ / Bloquear / Despublicar / ✕. Al cargar turno manual o al confirmar reserva, se eliminan todos los slots_publicados que solapan (overlap bidireccional). POST de publicación limpia sub-slots stale en BD. Cliente filtra por hora exacta. Tabla: `slots_publicados`. Route: `/api/admin/publicar-slot`. Al cancelar un turno, si `features.slotsPublicados` está activo, el slot se re-inserta automáticamente en `slots_publicados`.
+- ~~**Editar cliente desde admin**~~ — implementado el 2026-07-18. Botón "Editar" al lado de "Eliminar" en la tabla de turnos (Todos / Por día · tabla). Abre modal con nombre y teléfono pre-cargados; al guardar hace `UPDATE` en `clientes` filtrando por `cliente_id` y actualiza el estado local sin refetch.
+- ~~**Color distinto para turnos manuales en la grilla Por día**~~ — implementado el 2026-07-18. Turnos con `email_verificacion = null` (cargados por el admin) se muestran en verde (mismo verde del botón "Turno ✓"); turnos con email verificado mantienen el color de acento del negocio.
+- ~~**Sistema de turnos fijos (recurrentes)**~~ — implementado el 2026-07-18. Nueva tabla `turnos_fijos` (ver esquema). Pestaña **Fijos** en el admin para altas/bajas (`activo = false`, no se borra). Al abrir la pestaña Por día, `aplicarTurnosFijos` materializa automáticamente en `turnos` los fijos activos del día de la semana correspondiente que todavía no tengan turno cargado para esa fecha, resolviendo/creando el cliente por `(negocio_id, telefono)` e insertando con `email_verificacion: null` (aparecen en verde, igual que un turno manual). Requiere ejecutar el SQL de la tabla manualmente en Supabase (no hay migración automatizada en el repo).
 
 ## Auth / Verificación de identidad
 
@@ -522,6 +559,8 @@ Implementado el 2026-05-05. Reemplaza la validación client-side (contraseña en
 **Variable de entorno:** `ADMIN_PASSWORD` — sin `NEXT_PUBLIC_`, distinta por negocio en Vercel. Agregar también a `.env.local` para desarrollo local.
 
 **Nota:** la página de login está en `/admin-login` (no `/admin/login`) porque `app/admin/` tiene permisos de root en el sistema de archivos local. Funcionalmente idéntico.
+
+**Nota para Claude Code:** el directorio `app/admin/` es propiedad de `root` (`drwxr-xr-x root:root`) en el filesystem WSL; el archivo `page.tsx` adentro es propiedad del usuario y sí es escribible, pero el patrón de escritura atómica (crear `.tmp` + rename) que usa la herramienta Edit normal falla con `EPERM` porque requiere permiso de escritura sobre el directorio. Workaround: escribir el contenido directamente sobre el archivo existente (truncar + escribir, sin crear archivo temporal ni rename) — por ejemplo con un script Python que abre el archivo en modo `'w'` in place.
 
 **Fix cookie path (2026-05-19):** la cookie `admin_session` se emite con `path: '/'` (no `path: '/admin'`) para que el browser la envíe también en requests a `/api/admin/*`. Si hay sesiones activas previas al fix, hacer logout y login de nuevo.
 
