@@ -292,7 +292,7 @@ export default function Admin() {
 
   const renovarFijo = async (fijo: TurnoFijo) => {
     const horaCorta = fijo.hora.slice(0, 5)
-    const { data: ultimo } = await supabase
+    const { data: ultimos } = await supabase
       .from('turnos')
       .select('fecha')
       .eq('negocio_id', negocio.id)
@@ -300,8 +300,11 @@ export default function Admin() {
       .eq('hora_inicio', horaCorta)
       .gte('fecha', hoy())
       .order('fecha', { ascending: false })
-      .limit(1)
-      .single()
+      .limit(20)
+    const ultimo = ultimos?.find(t => {
+      const d = new Date(t.fecha + 'T12:00:00')
+      return d.getDay() === fijo.dia_semana
+    })
     const desde = ultimo?.fecha ?? hoy()
     await generarTurnosDesdeFijo({ recurso_id: fijo.recurso_id, dia_semana: fijo.dia_semana, hora: fijo.hora, nombre: fijo.nombre, telefono: fijo.telefono }, 4, desde)
     alert('Renovado')
