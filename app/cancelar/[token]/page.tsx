@@ -50,6 +50,21 @@ export default function CancelarTokenPage() {
 
     await supabase.from('turnos').delete().eq('id', turno.id)
 
+    const datosHistorial = {
+      negocio_id: negocio.id,
+      turno_id: turno.id,
+      simulador_id: turno.simulador_id,
+      fecha: turno.fecha,
+      hora_inicio: turno.hora_inicio,
+      cliente_nombre: turno.cliente.nombre,
+      cliente_telefono: turno.cliente.telefono,
+      accion: 'cancelacion_cliente',
+      actor: 'cliente',
+    }
+    console.log('Insertando en historial_turnos:', datosHistorial)
+    const { error: errorHistorial } = await supabase.from('historial_turnos').insert(datosHistorial)
+    if (errorHistorial) console.error('Error al insertar en historial_turnos:', errorHistorial)
+
     if (negocio.features?.slotsPublicados) {
       await supabase.from('slots_publicados').insert({
         negocio_id: negocio.id,

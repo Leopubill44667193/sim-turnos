@@ -248,7 +248,7 @@ export default function ReservarPage() {
         hora_inicio: horaSeleccionada,
         hora_fin: horaFin,
         ...(emailVerificado ? { email_verificacion: emailVerificado } : {}),
-      }).select('cancel_token').single()
+      }).select('id, cancel_token').single()
       if (errorTurno || !turnoCreado) {
         const msg = errorTurno?.code === '23505'
           ? 'Ese horario ya fue reservado por otro. Por favor elegí otro horario.'
@@ -258,6 +258,17 @@ export default function ReservarPage() {
         return
       }
       tokens.push(turnoCreado.cancel_token)
+      await supabase.from('historial_turnos').insert({
+        negocio_id: negocio.id,
+        turno_id: turnoCreado.id,
+        simulador_id: simId,
+        fecha,
+        hora_inicio: horaSeleccionada,
+        cliente_nombre: nombre,
+        cliente_telefono: telefono,
+        accion: 'creacion',
+        actor: emailVerificado,
+      })
     }
 
     if (negocio.features?.slotsPublicados) {

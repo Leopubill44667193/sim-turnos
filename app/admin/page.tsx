@@ -28,10 +28,25 @@ type TurnoFijo = {
   telefono: string | null
 }
 
+type HistorialItem = {
+  id: string
+  turno_id: string | null
+  simulador_id: number | null
+  fecha: string | null
+  hora_inicio: string | null
+  cliente_nombre: string | null
+  cliente_telefono: string | null
+  accion: 'creacion' | 'creacion_admin' | 'cancelacion_cliente' | 'cancelacion_admin'
+  actor: string | null
+  created_at: string
+}
+
 const HORARIOS = generarHorarios(negocio.horario.inicioMin, negocio.horario.finMin, negocio.horario.intervaloMinutos)
 const RECURSOS = negocio.recursos
 const DIAS_LABEL = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const DIAS_SEMANA_LABEL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+const HISTORIAL_PAGE_SIZE = 50
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function hoy() {
   return new Date().toLocaleString('sv-SE', { timeZone: 'America/Argentina/Buenos_Aires' }).slice(0, 10)
@@ -64,8 +79,19 @@ function DiffBadge({ diff }: { diff: number }) {
   return <span className={`text-sm font-medium ${color}`}>{arrow} {Math.abs(diff)}%</span>
 }
 
+function AccionBadge({ accion }: { accion: HistorialItem['accion'] }) {
+  const map: Record<HistorialItem['accion'], { label: string; className: string }> = {
+    creacion: { label: 'Creación cliente', className: 'bg-green-500/10 border-green-500/30 text-green-400' },
+    creacion_admin: { label: 'Creación admin', className: 'bg-green-500/10 border-green-500/30 text-green-400' },
+    cancelacion_admin: { label: 'Cancelación admin', className: 'bg-red-500/10 border-red-500/30 text-red-400' },
+    cancelacion_cliente: { label: 'Cancelación cliente', className: 'bg-orange-500/10 border-orange-500/30 text-orange-400' },
+  }
+  const cfg = map[accion]
+  return <span className={`inline-block px-2 py-1 rounded-md border text-xs uppercase tracking-widest whitespace-nowrap ${cfg.className}`}>{cfg.label}</span>
+}
+
 export default function Admin() {
-  const [modo, setModo] = useState<'resumen' | 'proximos' | 'todos' | 'dia' | 'fijos'>('resumen')
+  const [modo, setModo] = useState<'resumen' | 'proximos' | 'todos' | 'dia' | 'fijos' | 'historial'>('resumen')
   const [turnos, setTurnos] = useState<Turno[]>([])
   const [loading, setLoading] = useState(false)
   const [fecha, setFecha] = useState(hoy())
@@ -90,6 +116,8 @@ export default function Admin() {
   const [editNombre, setEditNombre] = useState('')
   const [editTelefono, setEditTelefono] = useState('')
   const [guardandoEdit, setGuardandoEdit] = useState(false)
+  const [eliminando, setEliminando] = useState<Turno | null>(null)
+  const [eliminandoGuardando, setEliminandoGuardando] = useState(false)
   const [turnosFijos, setTurnosFijos] = useState<TurnoFijo[]>([])
   const [loadingFijos, setLoadingFijos] = useState(false)
   const [mostrandoFormFijo, setMostrandoFormFijo] = useState(false)
@@ -99,6 +127,11 @@ export default function Admin() {
   const [fijoNombre, setFijoNombre] = useState('')
   const [fijoTelefono, setFijoTelefono] = useState('')
   const [guardandoFijo, setGuardandoFijo] = useState(false)
+  const [historial, setHistorial] = useState<HistorialItem[]>([])
+  const [loadingHistorial, setLoadingHistorial] = useState(false)
+  const [historialPagina, setHistorialPagina] = useState(0)
+  const [historialTotal, setHistorialTotal] = useState(0)
+  const [historialBusqueda, setHistorialBusqueda] = useState('')
 
   const fetchResumen = async () => {
     setLoadingResumen(true)
@@ -126,12 +159,19 @@ export default function Admin() {
       fetchResumen()
     } else if (modo === 'fijos') {
       fetchTurnosFijos()
+    } else if (modo === 'historial') {
+      setHistorialPagina(0)
+      fetchHistorial(0)
     } else {
       fetchTurnos()
       if (modo === 'dia') { fetchBloqueo(); fetchHorariosBloqueados(); fetchSlotsBloqueados(); fetchSlotsPublicados() }
       else { setDiaBloqueado(null); setHorariosBloqueados({}); setSlotsBloqueados({}); setSlotsPublicadosMap({}) }
     }
   }, [modo, fecha])
+
+  useEffect(() => {
+    if (modo === 'historial') fetchHistorial(historialPagina)
+  }, [historialPagina])
 
   const fetchTurnos = async () => {
     setLoading(true)
@@ -252,6 +292,20 @@ export default function Admin() {
     setLoadingFijos(false)
   }
 
+  const fetchHistorial = async (pagina: number) => {
+    setLoadingHistorial(true)
+    const desde = pagina * HISTORIAL_PAGE_SIZE
+    const { data, count } = await supabase
+      .from('historial_turnos')
+      .select('id, turno_id, simulador_id, fecha, hora_inicio, cliente_nombre, cliente_telefono, accion, actor, created_at', { count: 'exact' })
+      .eq('negocio_id', negocio.id)
+      .order('created_at', { ascending: false })
+      .range(desde, desde + HISTORIAL_PAGE_SIZE - 1)
+    setHistorial(data ?? [])
+    setHistorialTotal(count ?? 0)
+    setLoadingHistorial(false)
+  }
+
   const crearFijo = async () => {
     if (!fijoNombre.trim()) return
     setGuardandoFijo(true)
@@ -368,7 +422,20 @@ export default function Admin() {
       if (!nuevo) return
       clienteId = nuevo.id
     }
-    await supabase.from('turnos').insert({ negocio_id: negocio.id, simulador_id: recursoId, cliente_id: clienteId, fecha, hora_inicio: hora, hora_fin: horaFin })
+    const { data: turnoCreado } = await supabase.from('turnos').insert({ negocio_id: negocio.id, simulador_id: recursoId, cliente_id: clienteId, fecha, hora_inicio: hora, hora_fin: horaFin }).select('id').single()
+    if (turnoCreado) {
+      await supabase.from('historial_turnos').insert({
+        negocio_id: negocio.id,
+        turno_id: turnoCreado.id,
+        simulador_id: recursoId,
+        fecha,
+        hora_inicio: hora,
+        cliente_nombre: nombre,
+        cliente_telefono: telefono || null,
+        accion: 'creacion_admin',
+        actor: 'admin',
+      })
+    }
     if (negocio.features?.slotsPublicados) {
       const { data: pubs } = await supabase
         .from('slots_publicados')
@@ -467,10 +534,32 @@ export default function Admin() {
     setDiaBloqueado(null)
   }
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Eliminar este turno?')) return
-    const { error } = await supabase.from('turnos').delete().eq('id', id)
-    if (!error) setTurnos(turnos.filter((t) => t.id !== id))
+  const handleDelete = (id: string) => {
+    const turno = turnos.find((t) => t.id === id)
+    if (turno) setEliminando(turno)
+  }
+
+  const confirmarEliminarTurno = async () => {
+    if (!eliminando) return
+    setEliminandoGuardando(true)
+    const datosHistorial = {
+      negocio_id: negocio.id,
+      turno_id: eliminando.id,
+      simulador_id: eliminando.simulador_id,
+      fecha: eliminando.fecha,
+      hora_inicio: eliminando.hora_inicio,
+      cliente_nombre: eliminando.clientes?.nombre ?? null,
+      cliente_telefono: eliminando.clientes?.telefono ?? null,
+      accion: 'cancelacion_admin',
+      actor: null,
+    }
+    console.log('Insertando en historial_turnos:', datosHistorial)
+    const { error: errorHistorial } = await supabase.from('historial_turnos').insert(datosHistorial)
+    if (errorHistorial) console.error('Error al insertar en historial_turnos:', errorHistorial)
+    const { error } = await supabase.from('turnos').delete().eq('id', eliminando.id)
+    setEliminandoGuardando(false)
+    if (!error) setTurnos(turnos.filter((t) => t.id !== eliminando.id))
+    setEliminando(null)
   }
 
   const abrirEdicion = (t: Turno) => {
@@ -572,6 +661,13 @@ export default function Admin() {
     ? turnos.filter(t => !esPasado(t.fecha, t.hora_fin.slice(0, 5)))
     : turnos
 
+  const historialFiltrado = historialBusqueda.trim()
+    ? historial.filter(h => {
+        const q = historialBusqueda.trim().toLowerCase()
+        return (h.cliente_nombre ?? '').toLowerCase().includes(q) || (h.cliente_telefono ?? '').includes(q)
+      })
+    : historial
+
   const horariosFiltrados = !mostrarPasados
     ? HORARIOS.filter(hora => !esPasado(fecha, hora))
     : HORARIOS
@@ -669,6 +765,8 @@ export default function Admin() {
     ? `Todos los turnos · ${turnosFiltrados.length} turnos`
     : modo === 'fijos'
     ? `Turnos fijos · ${turnosFijos.length}`
+    : modo === 'historial'
+    ? `Historial · ${historialTotal} eventos`
     : `${fechaFormateada} · ${turnosFiltrados.length} turnos`
 
   const navClass = (m: typeof modo) =>
@@ -693,6 +791,7 @@ export default function Admin() {
               <button onClick={() => setModo('todos')} className={navClass('todos')}>Todos</button>
               <button onClick={() => setModo('dia')} className={navClass('dia')}>Por día</button>
               <button onClick={() => setModo('fijos')} className={navClass('fijos')}>Fijos</button>
+              <button onClick={() => setModo('historial')} className={navClass('historial')}>Historial</button>
             </div>
             {modo === 'dia' && (
               <>
@@ -971,6 +1070,74 @@ export default function Admin() {
               )}
             </div>
           )
+        ) : modo === 'historial' ? (
+          loadingHistorial ? (
+            <p className="text-gray-600 tracking-widest uppercase text-sm">Cargando...</p>
+          ) : (
+            <div className="space-y-6">
+              <input
+                type="text"
+                value={historialBusqueda}
+                onChange={e => setHistorialBusqueda(e.target.value)}
+                placeholder="Buscar por nombre o teléfono..."
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none placeholder-gray-700"
+              />
+              {historialFiltrado.length === 0 ? (
+                <p className="text-gray-600">No hay eventos en el historial.</p>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-white/10">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/10">
+                        <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Fecha/hora evento</th>
+                        <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Acción</th>
+                        <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Cliente</th>
+                        <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Turno</th>
+                        <th className="p-4 text-left text-xs uppercase tracking-widest text-gray-500">Actor</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historialFiltrado.map(h => (
+                        <tr key={h.id} className="border-b border-white/5 hover:bg-white/5 transition">
+                          <td className="p-4 text-gray-400 text-xs">
+                            {new Date(h.created_at).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour12: false })}
+                          </td>
+                          <td className="p-4"><AccionBadge accion={h.accion} /></td>
+                          <td className="p-4">
+                            <p>{h.cliente_nombre ?? '—'}</p>
+                            <p className="text-gray-500 text-xs">{h.cliente_telefono ?? '—'}</p>
+                          </td>
+                          <td className="p-4 text-gray-400 text-xs">
+                            {h.fecha ? new Date(h.fecha + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' }) : '—'}
+                            {h.hora_inicio ? ` · ${h.hora_inicio.slice(0, 5)}` : ''}
+                            {h.simulador_id != null ? ` · ${RECURSOS.find(r => r.id === h.simulador_id)?.nombre ?? negocio.recursoNombre + ' ' + h.simulador_id}` : ''}
+                          </td>
+                          <td className="p-4 text-gray-400 text-xs">
+                            {h.accion === 'cancelacion_admin' ? 'admin' : (h.actor ?? '—')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Página {historialPagina + 1} de {Math.max(1, Math.ceil(historialTotal / HISTORIAL_PAGE_SIZE))}</span>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setHistorialPagina(p => Math.max(0, p - 1))}
+                    disabled={historialPagina === 0}
+                    className="uppercase tracking-widest text-gray-500 hover:text-white transition disabled:opacity-30 disabled:hover:text-gray-500"
+                  >‹ Anterior</button>
+                  <button
+                    onClick={() => setHistorialPagina(p => (p + 1) * HISTORIAL_PAGE_SIZE < historialTotal ? p + 1 : p)}
+                    disabled={(historialPagina + 1) * HISTORIAL_PAGE_SIZE >= historialTotal}
+                    className="uppercase tracking-widest text-gray-500 hover:text-white transition disabled:opacity-30 disabled:hover:text-gray-500"
+                  >Siguiente ›</button>
+                </div>
+              </div>
+            </div>
+          )
         ) : loading ? (
           <p className="text-gray-600 tracking-widest uppercase text-sm">Cargando...</p>
         ) : modo === 'dia' && vista === 'grilla' ? (
@@ -1228,6 +1395,40 @@ export default function Admin() {
                 className="text-xs uppercase tracking-widest text-[var(--accent)] hover:text-[var(--accent)]/80 font-bold transition disabled:opacity-40"
               >
                 {guardandoEdit ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {eliminando && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
+          <div className="bg-[var(--bg)] border border-white/10 rounded-xl p-6 w-full max-w-sm">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-gray-400 mb-4">Eliminar turno</h3>
+            <div className="space-y-3 mb-6">
+              <div>
+                <p className="text-xs text-gray-600 uppercase tracking-widest mb-0.5">Cliente</p>
+                <p className="font-bold">{eliminando.clientes?.nombre ?? '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-600 uppercase tracking-widest mb-0.5">Fecha y hora</p>
+                <p className="font-bold capitalize">
+                  {new Date(eliminando.fecha + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })} · {eliminando.hora_inicio?.slice(0, 5)} - {eliminando.hora_fin?.slice(0, 5)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-600 uppercase tracking-widest mb-0.5">{negocio.recursoNombre}</p>
+                <p className="font-bold">{RECURSOS.find(r => r.id === eliminando.simulador_id)?.nombre ?? eliminando.simuladores?.nombre}</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-4">
+              <button onClick={() => setEliminando(null)} className="text-xs uppercase tracking-widest text-gray-600 hover:text-gray-400 transition">Cancelar</button>
+              <button
+                onClick={confirmarEliminarTurno}
+                disabled={eliminandoGuardando}
+                className="text-xs uppercase tracking-widest bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg transition"
+              >
+                {eliminandoGuardando ? 'Eliminando...' : 'Eliminar'}
               </button>
             </div>
           </div>

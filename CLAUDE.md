@@ -354,6 +354,45 @@ CREATE INDEX idx_turnos_fijos_negocio ON turnos_fijos (negocio_id, dia_semana, a
 
 RLS deshabilitado.
 
+### `historial_turnos`
+| campo | tipo | notas |
+|-------|------|-------|
+| id | uuid PK | default gen_random_uuid() |
+| negocio_id | text NOT NULL | |
+| turno_id | uuid | nullable — id del turno original en `turnos` (la fila puede ya no existir tras una cancelación) |
+| simulador_id | int | nullable |
+| fecha | date | nullable |
+| hora_inicio | time | nullable |
+| cliente_nombre | text | nullable |
+| cliente_telefono | text | nullable |
+| accion | text NOT NULL | `'creacion'`, `'cancelacion_cliente'`, `'cancelacion_admin'` |
+| actor | text | nullable — email Google si `creacion`, `null` si `cancelacion_admin`, `'cliente'` si `cancelacion_cliente` |
+| created_at | timestamptz NOT NULL | default now() |
+
+**Índices:** `(negocio_id, created_at DESC)`, `(negocio_id, cliente_telefono)`
+
+Log de eventos de turnos (creación y cancelación), append-only — nunca se actualiza ni se borra. Se inserta una fila en tres puntos: al confirmar una reserva (`confirmarReserva()` en `app/reservar/page.tsx`, una fila por recurso reservado, `accion: 'creacion'`, `actor` = email verificado con Google), al cancelar desde `/cancelar/[token]` (`accion: 'cancelacion_cliente'`, `actor: 'cliente'`), y al eliminar un turno desde el admin (`handleDelete` en `app/admin/page.tsx`, `accion: 'cancelacion_admin'`, `actor: null`). Se consulta desde la pestaña **Historial** del admin, paginada de a 50 registros vía `.range()`. Migración pendiente — ejecutar el SQL manualmente en Supabase (no hay script en el repo).
+
+```sql
+CREATE TABLE historial_turnos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  negocio_id text NOT NULL,
+  turno_id uuid,
+  simulador_id int,
+  fecha date,
+  hora_inicio time,
+  cliente_nombre text,
+  cliente_telefono text,
+  accion text NOT NULL,
+  actor text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_historial_turnos_negocio ON historial_turnos (negocio_id, created_at DESC);
+CREATE INDEX idx_historial_turnos_telefono ON historial_turnos (negocio_id, cliente_telefono);
+```
+
+RLS deshabilitado.
+
 ---
 
 ## Rutas
@@ -367,7 +406,7 @@ RLS deshabilitado.
 | `/cancelar/[token]` | Cancelación self-service, sin login |
 | `/cancelar` | Redirige a /mis-turnos |
 | `/mis-turnos` | Buscar turnos propios por teléfono |
-| `/admin` | Panel con cinco pestañas: Resumen / Próximos / Todos / Por día / Fijos. **Resumen:** métricas de hoy, semana y mes — combina `turnos` + `slots_bloqueados` con motivo no vacío (los slots con nombre representan reservas del dueño). Query trae desde inicioMes(-1) hasta finMes(0). **Próximos:** combina turnos reales y slots con motivo, ordenados por fecha+hora; slots sin botón Eliminar. **Todos** y **Por día (tabla):** cada fila de turno tiene botones Editar (abre modal para actualizar nombre/teléfono, hace `UPDATE` en `clientes` filtrando por `cliente_id`) y Eliminar. **Por día:** grilla + tabla + bloqueos. En la grilla: turnos con `email_verificacion = null` (cargados manualmente por el admin, incluidos los generados desde `turnos_fijos`) se muestran en verde (`green-500`, mismo color que el botón "Turno ✓"); turnos con email verificado usan el color de acento del negocio. Click en slot libre abre form con opciones: (1) Turno ✓ — carga turno manual (nombre obligatorio, teléfono opcional), se inserta en `turnos`; si el slot está publicado también elimina todos los `slots_publicados` que solapan (fórmula de overlap bidireccional); (2) Bloquear — bloquea ese slot; si estaba publicado también lo despublica; (3) Publicar — solo negocios con `slotsPublicados`, solo si el slot no está publicado; (4) Despublicar — solo si el slot está publicado; (5) ✕ — cierra sin acción. Slot publicado (cian): click → abre el mismo form; sub-slots H+30 y H+60 de un publicado muestran `↳ publicado` en cian tenue y no son clickeables. Bloqueos con motivo: slots +30/+60 muestran `↳ [motivo]`. Click en label de hora → bloquea/desbloquea todos los slots libres de esa fila. Flechas ‹ › para navegar días. **Fijos:** lista de `turnos_fijos` activos (día, hora, recurso, cliente, teléfono) con botón "+ Agregar fijo" (form: día de semana, hora, recurso, nombre, teléfono opcional) y, por fila, botones "Renovar" y "Desactivar". Al agregar un fijo se generan automáticamente sus próximas 4 ocurrencias en `turnos` (ver detalle en el esquema de `turnos_fijos`). "Renovar" genera 4 ocurrencias más a partir del último turno futuro existente (o desde hoy si no hay ninguno). "Desactivar" borra los turnos futuros de ese fijo y recién después setea `activo = false` (no borra la fila del fijo). |
+| `/admin` | Panel con seis pestañas: Resumen / Próximos / Todos / Por día / Fijos / Historial. **Resumen:** métricas de hoy, semana y mes — combina `turnos` + `slots_bloqueados` con motivo no vacío (los slots con nombre representan reservas del dueño). Query trae desde inicioMes(-1) hasta finMes(0). **Próximos:** combina turnos reales y slots con motivo, ordenados por fecha+hora; slots sin botón Eliminar. **Todos** y **Por día (tabla):** cada fila de turno tiene botones Editar (abre modal para actualizar nombre/teléfono, hace `UPDATE` en `clientes` filtrando por `cliente_id`) y Eliminar. **Por día:** grilla + tabla + bloqueos. En la grilla: turnos con `email_verificacion = null` (cargados manualmente por el admin, incluidos los generados desde `turnos_fijos`) se muestran en verde (`green-500`, mismo color que el botón "Turno ✓"); turnos con email verificado usan el color de acento del negocio. Click en slot libre abre form con opciones: (1) Turno ✓ — carga turno manual (nombre obligatorio, teléfono opcional), se inserta en `turnos`; si el slot está publicado también elimina todos los `slots_publicados` que solapan (fórmula de overlap bidireccional); (2) Bloquear — bloquea ese slot; si estaba publicado también lo despublica; (3) Publicar — solo negocios con `slotsPublicados`, solo si el slot no está publicado; (4) Despublicar — solo si el slot está publicado; (5) ✕ — cierra sin acción. Slot publicado (cian): click → abre el mismo form; sub-slots H+30 y H+60 de un publicado muestran `↳ publicado` en cian tenue y no son clickeables. Bloqueos con motivo: slots +30/+60 muestran `↳ [motivo]`. Click en label de hora → bloquea/desbloquea todos los slots libres de esa fila. Flechas ‹ › para navegar días. **Fijos:** lista de `turnos_fijos` activos (día, hora, recurso, cliente, teléfono) con botón "+ Agregar fijo" (form: día de semana, hora, recurso, nombre, teléfono opcional) y, por fila, botones "Renovar" y "Desactivar". Al agregar un fijo se generan automáticamente sus próximas 4 ocurrencias en `turnos` (ver detalle en el esquema de `turnos_fijos`). "Renovar" genera 4 ocurrencias más a partir del último turno futuro existente (o desde hoy si no hay ninguno). "Desactivar" borra los turnos futuros de ese fijo y recién después setea `activo = false` (no borra la fila del fijo). **Historial:** tabla paginada (50 registros por página, `.range()`) sobre `historial_turnos` ordenada por `created_at DESC`, con badge de color por `accion` (verde=creación, rojo=cancelación admin, naranja=cancelación cliente) y buscador por nombre/teléfono que filtra client-side solo sobre los registros de la página cargada. |
 | `/api/notificar` | POST server-side → Twilio Content Templates: admin (TO_1/TO_2) + cliente |
 | `/api/validar-reserva` | POST server-side → valida nombre/teléfono y límite por IP antes del insert |
 | `/api/admin/bloquear-slot` | POST/DELETE server-side → bloquea o desbloquea un slot individual (recurso + fecha + hora) en `slots_bloqueados`. Requiere cookie `admin_session`. |
@@ -497,6 +536,27 @@ ADMIN_PASSWORD=...
 
 ---
 
+## Deuda técnica y seguridad pendiente
+
+### Crítico
+- **RLS deshabilitado** — anon key pública + sin RLS permite lectura/escritura directa a Supabase sin auth. PII de clientes (nombre, teléfono, email) de todos los negocios expuesta. Solución: habilitar RLS con políticas mínimas, o mover mutaciones sensibles a API routes server-side con service_role key.
+- **adminPassword en configs** — campo dead code en texto plano en todos los config/*.ts, filtrado al bundle público. Eliminar el campo y rotar ADMIN_PASSWORD en Vercel por las dudas.
+
+### Medio-alto
+- **Sin rate limiting en /api/admin-login** — vulnerable a brute-force. Misma lógica que reservas_por_ip.
+- **Mutaciones del admin mezcladas** — algunas van por API routes autenticadas (bloquear-slot, publicar-slot), la mayoría van directo cliente→Supabase. Inconsistente y depende de que RLS siga apagado.
+
+### Medio
+- **Lógica duplicada** — "buscar/crear cliente + calcular hora_fin + insertar turno" reimplementada en 3 lugares (reservar/page.tsx, cargarTurnoManual, generarTurnosDesdeFijo). Consolidar en helper compartido.
+- **check.sh incompleto** — solo cubre 3 de los 6 negocios activos y no cubre rutas como /confirmado, /cancelar/[token].
+- **Sin constraint única en turnos_fijos** — nada impide duplicados accidentales desde el form.
+
+### Arquitectura futura (si se escala a 20+ negocios)
+- Resolver negocio_id por dominio en runtime (middleware) en vez de NEXT_PUBLIC_NEGOCIO_ID fijo por deployment — permitiría un solo deployment para N negocios.
+- El doble remote git (origin/prgrssv) no escala más allá de pocos negocios.
+
+---
+
 ## Features pendientes
 
 - ~~**Historial de turnos en admin y mis-turnos**~~ — implementado el 2026-04-30. Toggle "Ver historial / Ocultar historial" en ambas páginas.
@@ -511,6 +571,7 @@ ADMIN_PASSWORD=...
 - ~~**Editar cliente desde admin**~~ — implementado el 2026-07-18. Botón "Editar" al lado de "Eliminar" en la tabla de turnos (Todos / Por día · tabla). Abre modal con nombre y teléfono pre-cargados; al guardar hace `UPDATE` en `clientes` filtrando por `cliente_id` y actualiza el estado local sin refetch.
 - ~~**Color distinto para turnos manuales en la grilla Por día**~~ — implementado el 2026-07-18. Turnos con `email_verificacion = null` (cargados por el admin) se muestran en verde (mismo verde del botón "Turno ✓"); turnos con email verificado mantienen el color de acento del negocio.
 - ~~**Turnos fijos con generación automática, renovar y desactivar**~~ — implementado el 2026-07-18. Nueva tabla `turnos_fijos` (ver esquema). Pestaña **Fijos** en el admin: al crear un fijo se generan sus próximas 4 ocurrencias en `turnos` (resolviendo/creando el cliente por `(negocio_id, telefono)`, `email_verificacion: null` → aparecen en verde igual que un turno manual); "Renovar" genera 4 ocurrencias más desde el último turno futuro existente (o desde hoy si no hay ninguno); "Desactivar" borra los turnos futuros de ese fijo y recién después setea `activo = false` en `turnos_fijos` (no borra la fila). Requiere ejecutar el SQL de la tabla manualmente en Supabase (no hay migración automatizada en el repo).
+- ~~**`historial_turnos` — log de eventos de turnos**~~ — implementado el 2026-08-18. Nueva tabla `historial_turnos` (ver esquema), append-only. Se loguea creación en `confirmarReserva()` (`app/reservar/page.tsx`), cancelación del cliente en `/cancelar/[token]` y cancelación desde el admin en `handleDelete` (`app/admin/page.tsx`). Pestaña **Historial** en el admin: tabla paginada (50/página) con badge de color por acción y buscador client-side por nombre/teléfono sobre la página cargada. Requiere ejecutar el SQL de la tabla manualmente en Supabase (no hay migración automatizada en el repo).
 
 ## Auth / Verificación de identidad
 
